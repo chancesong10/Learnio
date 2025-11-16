@@ -1,8 +1,8 @@
-"use strict";
 const { contextBridge, ipcRenderer } = require('electron');
+
 contextBridge.exposeInMainWorld('api', {
-    // Example API methods with proper typing
-    fetchSyllabus: (syllabusData) => ipcRenderer.invoke('fetch-syllabus', syllabusData),
+    // File and API methods
+    processSyllabus: (fileBuffer) => ipcRenderer.invoke('process-syllabus', fileBuffer),
     extractKeywords: (text) => ipcRenderer.invoke('extract-keywords', text),
     searchWeb: (query) => ipcRenderer.invoke('search-web', query),
     downloadPDF: (url) => ipcRenderer.invoke('download-pdf', url),

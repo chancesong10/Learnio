@@ -8,7 +8,7 @@
 declare global {
     interface Window {
         api: {
-            fetchSyllabus: (syllabusData: any) => Promise<any>;
+            processSyllabus: (fileBuffer: ArrayBuffer) => Promise<any>;
             extractKeywords: (text: string) => Promise<any>;
             searchWeb: (query: string) => Promise<any>;
             downloadPDF: (url: string) => Promise<any>;
@@ -28,16 +28,7 @@ if (syllabusUpload) {
         if (target && target.files) {
             const file = target.files[0];
             if (file) {
-                const formData = new FormData();
-                formData.append('file', file);
-
-                // Use the exposed api instead of ipcRenderer
-                window.api.fetchSyllabus(formData).then((data: any) => {
-                    console.log('Syllabus processed:', data);
-                    // Update the UI with the processed data
-                }).catch((err: any) => {
-                    console.error('Error processing syllabus:', err);
-                });
+                console.log('File uploaded:', file.name);
             }
         }
     });
@@ -45,24 +36,92 @@ if (syllabusUpload) {
 
 const generateFlashcardsBtn = document.getElementById('generate-flashcards');
 if (generateFlashcardsBtn) {
-    generateFlashcardsBtn.addEventListener('click', () => {
-        window.api.generateFlashcards({}).then((flashcards: any) => {
+    generateFlashcardsBtn.addEventListener('click', async () => {
+        const output = document.getElementById('output');
+        if (output) output.innerText = '⏳ Generating flashcards...';
+        
+        try {
+            const flashcards = await window.api.generateFlashcards({});
             console.log('Flashcards generated:', flashcards);
-            // Update the UI with the flashcards
-        }).catch((err: any) => {
-            console.error('Error generating flashcards:', err);
-        });
+            if (output) {
+                output.innerText = JSON.stringify(flashcards, null, 2);
+            }
+        } catch (err) {
+            const errorText = '❌ Error generating flashcards:\n' + (err instanceof Error ? err.message : String(err));
+            if (output) output.innerText = errorText;
+            console.error('Error:', err);
+        }
     });
 }
 
 const createPracticeExamBtn = document.getElementById('create-practice-exam');
 if (createPracticeExamBtn) {
-    createPracticeExamBtn.addEventListener('click', () => {
-        window.api.createPracticeExam({}).then((exam: any) => {
+    createPracticeExamBtn.addEventListener('click', async () => {
+        const output = document.getElementById('output');
+        if (output) output.innerText = '⏳ Creating practice exam...';
+        
+        try {
+            const exam = await window.api.createPracticeExam({});
             console.log('Practice exam created:', exam);
-            // Update the UI with the exam
-        }).catch((err: any) => {
-            console.error('Error creating practice exam:', err);
-        });
+            if (output) {
+                output.innerText = JSON.stringify(exam, null, 2);
+            }
+        } catch (err) {
+            const errorText = '❌ Error creating practice exam:\n' + (err instanceof Error ? err.message : String(err));
+            if (output) output.innerText = errorText;
+            console.error('Error:', err);
+        }
     });
+}
+
+const summarizeBtn = document.getElementById('summarize-syllabus');
+const outputDiv = document.getElementById('output');
+const summaryOutput = document.getElementById('syllabus-summary');
+
+console.log('Renderer script loaded');
+console.log('Summarize button:', summarizeBtn);
+console.log('Output div:', outputDiv);
+console.log('Summary output:', summaryOutput);
+
+if (summarizeBtn) {
+    console.log('Attaching click listener to summarize button');
+    summarizeBtn.addEventListener('click', async () => {
+        console.log('Summarize button clicked!');
+        
+        if (!syllabusUpload || !syllabusUpload.files?.length) {
+            console.log('No file uploaded');
+            if (summaryOutput) summaryOutput.innerText = '⚠️  Please upload a syllabus first.';
+            return;
+        }
+
+        const file = syllabusUpload.files[0];
+        console.log('File selected:', file.name);
+        console.log('File selected:', file.name, 'Size:', file.size);
+
+        if (summaryOutput) {
+            summaryOutput.innerText = '⏳ Processing syllabus...';
+            console.log('Set loading message');
+        }
+
+        try {
+            // Read file as ArrayBuffer
+            const fileBuffer = await file.arrayBuffer();
+            console.log('File read, size:', fileBuffer.byteLength);
+            
+            console.log('Calling window.api.processSyllabus');
+            const result = await window.api.processSyllabus(fileBuffer);
+            console.log('Got result:', result);
+            
+            const resultText = JSON.stringify(result, null, 2);
+            if (summaryOutput) summaryOutput.innerText = resultText;
+            console.log('Syllabus summary:', result);
+        } catch (err) {
+            console.error('Error caught:', err);
+            const errorText = '❌ Error:\n' + (err instanceof Error ? err.message : String(err));
+            if (summaryOutput) summaryOutput.innerText = errorText;
+            console.error('Error:', err);
+        }
+    });
+} else {
+    console.log('Summarize button not found!');
 }
