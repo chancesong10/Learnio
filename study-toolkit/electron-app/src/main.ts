@@ -183,15 +183,19 @@ ipcMain.handle('create-practice-exam', async (event: IpcMainInvokeEvent, params:
 // NEW: Get all courses from database
 ipcMain.handle('get-courses', async (event: IpcMainInvokeEvent) => {
     try {
-        // Try questions table first (has actual questions)
-        let rows = await queryDatabase('SELECT DISTINCT course FROM questions WHERE course IS NOT NULL AND course != ""');
+        // Get courses from both tables and merge them
+        const coursesTableRows = await queryDatabase('SELECT DISTINCT course FROM courses WHERE course IS NOT NULL AND course != ""');
+        const questionsTableRows = await queryDatabase('SELECT DISTINCT course FROM questions WHERE course IS NOT NULL AND course != ""');
         
-        // If no courses in questions table, try courses table
-        if (rows.length === 0) {
-            rows = await queryDatabase('SELECT DISTINCT course FROM courses WHERE course IS NOT NULL AND course != ""');
-        }
+        // Combine and deduplicate courses from both tables
+        const allCourses = new Set<string>();
         
-        const courses = rows.map((row: any) => row.course);
+        coursesTableRows.forEach((row: any) => allCourses.add(row.course));
+        questionsTableRows.forEach((row: any) => allCourses.add(row.course));
+        
+        const courses = Array.from(allCourses).sort();
+        
+        console.log('Found courses:', courses);
         return { status: 'success', courses };
     } catch (err: any) {
         console.error('Error fetching courses:', err);

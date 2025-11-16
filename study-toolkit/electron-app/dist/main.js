@@ -164,13 +164,15 @@ ipcMain.handle('create-practice-exam', async (event, params) => {
 // NEW: Get all courses from database
 ipcMain.handle('get-courses', async (event) => {
     try {
-        // Try questions table first (has actual questions)
-        let rows = await queryDatabase('SELECT DISTINCT course FROM questions WHERE course IS NOT NULL AND course != ""');
-        // If no courses in questions table, try courses table
-        if (rows.length === 0) {
-            rows = await queryDatabase('SELECT DISTINCT course FROM courses WHERE course IS NOT NULL AND course != ""');
-        }
-        const courses = rows.map((row) => row.course);
+        // Get courses from both tables and merge them
+        const coursesTableRows = await queryDatabase('SELECT DISTINCT course FROM courses WHERE course IS NOT NULL AND course != ""');
+        const questionsTableRows = await queryDatabase('SELECT DISTINCT course FROM questions WHERE course IS NOT NULL AND course != ""');
+        // Combine and deduplicate courses from both tables
+        const allCourses = new Set();
+        coursesTableRows.forEach((row) => allCourses.add(row.course));
+        questionsTableRows.forEach((row) => allCourses.add(row.course));
+        const courses = Array.from(allCourses).sort();
+        console.log('Found courses:', courses);
         return { status: 'success', courses };
     }
     catch (err) {
