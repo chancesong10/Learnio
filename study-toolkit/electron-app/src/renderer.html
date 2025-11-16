@@ -7,49 +7,64 @@
     <title>LearnIO</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-gray-100">
-    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-8">
-        <h1 class="text-4xl font-bold text-gray-800 mb-8">LearnIO</h1>
+<body class="bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 min-h-screen py-8">
+    <div class="max-w-4xl mx-auto bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
+        <div class="flex items-center mb-8">
+            <div class="w-12 h-12 bg-gradient-to-br from-purple-600 to-indigo-700 rounded-lg flex items-center justify-center mr-4 shadow-lg">
+                <span class="text-white text-2xl font-bold">L</span>
+            </div>
+            <h1 class="text-4xl font-bold text-white">LearnIO</h1>
+        </div>
         
         <div class="space-y-6">
             <!-- Upload Syllabus Section -->
-            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Upload Syllabus</h2>
-                <label for="syllabus-upload" class="block text-sm font-medium text-gray-600 mb-2">
+            <div class="border border-gray-700 rounded-lg p-6 bg-gradient-to-r from-purple-900/30 to-indigo-900/30">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    Upload Syllabus
+                </h2>
+                <label for="syllabus-upload" class="block text-sm font-medium text-gray-300 mb-2">
                     Select a syllabus file:
                 </label>
                 <input 
                     type="file" 
                     id="syllabus-upload" 
                     accept=".pdf,.doc,.docx,.txt"
-                    class="block w-full text-sm text-gray-500
+                    class="block w-full text-sm text-gray-300
                         file:mr-4 file:py-2 file:px-4
                         file:rounded-md file:border-0
                         file:text-sm file:font-semibold
-                        file:bg-blue-50 file:text-blue-700
-                        hover:file:bg-blue-100"
+                        file:bg-purple-600 file:text-white
+                        hover:file:bg-purple-700 cursor-pointer"
                 >
                 <button 
                     id="summarize-syllabus"
-                    class="px-6 py-2 bg-purple-500 text-white font-semibold rounded-lg hover:bg-purple-600 active:bg-purple-700 transition mt-4"
+                    class="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-700 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-indigo-800 active:scale-95 transition transform mt-4 shadow-md"
                 >
                     Summarize Syllabus
                 </button>
-                <pre id="syllabus-summary" class="bg-gray-100 p-4 mt-2 rounded border"></pre>
+                <pre id="syllabus-summary" class="bg-gray-900/50 p-4 mt-4 rounded-lg border border-gray-700 text-sm max-h-48 overflow-auto text-gray-300"></pre>
             </div>
 
             <!-- Practice Exam Configuration Section -->
-            <div id="practice-exam-section" class="border border-gray-200 rounded-lg p-6 bg-gray-50" style="display: none;">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Create Practice Exam</h2>
+            <div id="practice-exam-section" class="border border-gray-700 rounded-lg p-6 bg-gradient-to-r from-green-900/30 to-emerald-900/30">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Create Practice Exam
+                </h2>
                 
                 <!-- Course Selection -->
                 <div class="mb-4">
-                    <label for="course-select" class="block text-sm font-medium text-gray-700 mb-2">
+                    <label for="course-select" class="block text-sm font-medium text-gray-300 mb-2">
                         Select Course:
                     </label>
                     <select 
                         id="course-select"
-                        class="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        class="block w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition text-gray-100"
                     >
                         <option value="">-- Select a course --</option>
                     </select>
@@ -57,17 +72,17 @@
 
                 <!-- Topic Selection -->
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">
                         Select Topics (optional - leave blank for all topics):
                     </label>
-                    <div id="topics-checklist" class="bg-white border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto">
+                    <div id="topics-checklist" class="bg-gray-900 border border-gray-700 rounded-lg p-4 max-h-60 overflow-y-auto shadow-sm">
                         <p class="text-gray-500 text-sm">Select a course to see available topics</p>
                     </div>
                 </div>
 
                 <!-- Number of Questions -->
                 <div class="mb-4">
-                    <label for="num-questions" class="block text-sm font-medium text-gray-700 mb-2">
+                    <label for="num-questions" class="block text-sm font-medium text-gray-300 mb-2">
                         Number of Questions:
                     </label>
                     <input 
@@ -76,26 +91,36 @@
                         min="1"
                         max="100"
                         value="20"
-                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        class="block w-full px-4 py-2.5 border border-gray-700 bg-gray-900 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition text-gray-100"
                     >
                 </div>
 
                 <button 
                     id="create-practice-exam"
-                    class="px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 active:bg-green-700 transition"
+                    class="px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-700 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-800 active:scale-95 transition transform shadow-md"
                 >
                     Generate Practice Exam
                 </button>
             </div>
 
             <!-- Output Section -->
-            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Output</h2>
+            <div class="border border-gray-700 rounded-lg p-6 bg-gray-800/50">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Results
+                </h2>
                 <div 
                     id="output"
-                    class="bg-white border border-gray-300 rounded p-4 min-h-24 text-gray-600 whitespace-pre-wrap overflow-auto"
+                    class="bg-gray-900 border border-gray-700 rounded-lg p-6 min-h-32 shadow-sm"
                 >
-                    <p>Results will appear here...</p>
+                    <div class="text-center text-gray-500 py-8">
+                        <svg class="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <p class="text-lg">Results will appear here...</p>
+                    </div>
                 </div>
             </div>
         </div>
