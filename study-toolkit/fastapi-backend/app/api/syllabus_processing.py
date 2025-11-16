@@ -1,4 +1,12 @@
 import sys
+import asyncio
+
+# ----- FIX WINDOWS ASYNCIO BUG -----
+# Forces Python to use the stable SelectorEventLoop on Windows
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# -----------------------------------
+
 import json
 import PyPDF2
 import os
@@ -35,15 +43,23 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 async def analyze_syllabus_with_gemini(text: str) -> dict:
     prompt = f"""
 Analyze the following course syllabus and extract:
-1. Course name (Without Course Code)
-2. Topics that will be quizzed on (List where each entry is concise and no more than 3 words)
 
-Format your response as JSON with keys:
-- course_name (string)
-- topics (array of strings)
+1. Course name: Provide a clear, descriptive course name WITHOUT the course code.
+   - Good examples: "Matrix Algebra", "Introduction to Modern Biology", "Differential Calculus with Applications"
+   - Bad examples: "MATH221", "BIOL 111", "MATH 101"
+   
+2. Topics that will be quizzed on: List each topic concisely (no more than 3 words per topic)
 
-Syllabus Summary:
-{text}
+IMPORTANT: The course name you provide will be used to store and retrieve practice questions, so make it descriptive and consistent.
+
+Format your response as JSON with this exact structure:
+{{
+    "course_name": "Descriptive course name without code",
+    "topics": ["Topic 1", "Topic 2", "Topic 3"]
+}}
+
+Syllabus text:
+{text[:4000]}
 """
     response = await client.aio.models.generate_content(
         model="gemini-2.0-flash",
@@ -53,13 +69,24 @@ Syllabus Summary:
         )
     )
 
-    # Parse JSON output
     try:
         analysis = json.loads(response.text)
+
+        if not analysis.get("course_name"):
+            analysis["course_name"] = "Unknown Course"
+
+        if not isinstance(analysis.get("topics"), list):
+            analysis["topics"] = []
+
+        print(f"[Gemini Analysis] Course: {analysis['course_name']}, Topics: {len(analysis['topics'])}")
+
     except Exception as e:
-        print("Raw Gemini output:", response)
+        print("Raw Gemini output:", response.text)
         print(f"Exception occurred: {type(e).__name__} - {e}")
-        analysis = {"course_name": "Unknown Course", "topics": []}
+        analysis = {
+            "course_name": "Unknown Course",
+            "topics": []
+        }
 
     return analysis
 
@@ -89,7 +116,7 @@ def insert_into_db(analysis: dict):
     topics_str = ", ".join(topics)
 
     c.execute("""
-        INSERT OR IGNORE INTO courses (course, topics)
+        INSERT OR REPLACE INTO courses (course, topics)
         VALUES (?, ?)
     """, (course_name, topics_str))
 
@@ -110,11 +137,9 @@ async def main():
     text = extract_text_from_pdf(syllabus_file)
     analysis = await analyze_syllabus_with_gemini(text)
 
-    # Print analysis for debugging
     output = {**analysis}
     print(json.dumps(output, indent=4))
 
-    # Save to database
     insert_into_db(analysis)
 
 if __name__ == "__main__":

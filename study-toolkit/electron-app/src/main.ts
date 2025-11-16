@@ -44,10 +44,7 @@ app.on('activate', () => {
 // -------------------------
 // Python helper
 // -------------------------
-// Set this to your Python 3.11 executable
 const PYTHON_PATH = 'python';
-
-// Calculate the correct path to the sibling fastapi-backend folder
 const PYTHON_SCRIPT = path.resolve(__dirname, '..', '..', 'fastapi-backend', 'app', 'api', 'syllabus_processing.py');
 
 function runPythonScript(scriptPath: string, args: string[]): Promise<any> {
@@ -82,6 +79,34 @@ function runPythonScript(scriptPath: string, args: string[]): Promise<any> {
 }
 
 // -------------------------
+// HTTP helper for FastAPI calls
+// -------------------------
+async function callFastAPI(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
+    const url = `http://localhost:8000${endpoint}`;
+    const options: RequestInit = {
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    };
+    
+    if (body && method !== 'GET') {
+        options.body = JSON.stringify(body);
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`FastAPI error: ${response.status} - ${errorText}`);
+        }
+        return await response.json();
+    } catch (error: any) {
+        throw new Error(`Failed to call FastAPI: ${error.message}`);
+    }
+}
+
+// -------------------------
 // IPC handlers
 // -------------------------
 ipcMain.handle('process-syllabus', async (event: IpcMainInvokeEvent, fileBuffer: ArrayBuffer) => {
@@ -90,7 +115,6 @@ ipcMain.handle('process-syllabus', async (event: IpcMainInvokeEvent, fileBuffer:
     const tempFile = path.join(os.tmpdir(), `syllabus_${Date.now()}.pdf`);
 
     try {
-        // Convert ArrayBuffer to Node Buffer
         const buffer = Buffer.from(new Uint8Array(fileBuffer));
         fs.writeFileSync(tempFile, buffer);
 
@@ -104,10 +128,34 @@ ipcMain.handle('process-syllabus', async (event: IpcMainInvokeEvent, fileBuffer:
     }
 });
 
+ipcMain.handle('create-practice-exam', async (event: IpcMainInvokeEvent, params: any) => {
+    try {
+        const { course, topics, num_questions } = params;
+        
+        if (!course) {
+            return { status: 'error', message: '❌ Course is required', exam: null };
+        }
+        
+        const requestBody = {
+            course,
+            topics: topics || [],
+            num_questions: num_questions || 20
+        };
+        
+        console.log('Creating practice exam with:', requestBody);
+        
+        const result = await callFastAPI('/create-practice-exam/', 'POST', requestBody);
+        
+        return { status: 'success', message: '✅ Practice exam created', exam: result };
+    } catch (err: any) {
+        console.error('Error creating practice exam:', err);
+        return { status: 'error', message: '❌ ' + (err.message || String(err)), exam: null };
+    }
+});
+
 // -------------------------
 // Stub handlers for other features
 // -------------------------
 ipcMain.handle('extract-keywords', async () => ({ status: 'success', message: '✅ Backend pending', keywords: [] }));
 ipcMain.handle('search-web', async () => ({ status: 'success', message: '✅ Backend pending', results: [] }));
 ipcMain.handle('download-pdf', async () => ({ status: 'success', message: '✅ Backend pending' }));
-ipcMain.handle('create-practice-exam', async () => ({ status: 'success', message: '✅ Backend pending', exam: null }));

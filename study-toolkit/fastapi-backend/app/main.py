@@ -12,7 +12,7 @@ import sqlite3
 from pathlib import Path
 from .api.syllabus_processing import insert_into_db
 
-load_dotenv('.env.local')  # Load environment variables from .env.local
+load_dotenv('.env.local')
 
 # Import your existing routers
 from .api import (
@@ -53,7 +53,7 @@ app.include_router(practice_exam_creator.router)
 
 # --- HELPER: Insert questions into SQLite database ---
 def insert_questions_into_db(questions: list):
-    project_root = Path(__file__).resolve().parents[2]  # adjust to match your folder structure
+    project_root = Path(__file__).resolve().parents[2]
     db_path = project_root / "data" / "question_bank.sqlite"
 
     if not db_path.exists():
@@ -116,6 +116,9 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         analysis = await analyze_syllabus_with_gemini(syllabus_text)
 
         results["course_info"] = analysis
+        
+        # IMPORTANT: Use the course_name from Gemini's analysis
+        # This is what will be stored in the database
         course_name = analysis.get("course_name", "Unknown Course")
         topics = analysis.get("topics", [])
 
@@ -179,18 +182,24 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
             for file_info in downloaded_files:
                 try:
                     pdf_text = extract_text_from_pdf(file_info["path"])
+                    
+                    # IMPORTANT: Make sure Gemini uses the exact course_name from analysis
                     prompt = f"""
 Analyze this past exam content for the course "{course_name}" covering topics: {', '.join(topics)}.
 
 Extract practice questions that would help students prepare for this course.
 
+IMPORTANT: You must use EXACTLY this course name in your response: "{course_name}"
+
 Format your response as JSON with this structure:
 {{
     "questions": [
-        {{"question": "The question text",
+        {{
+          "question": "The question text",
           "course": "{course_name}",
-          "difficulty": "easy", "medium", or "hard",
-          "topic": "relevant topic from the list"}}
+          "difficulty": "easy" or "medium" or "hard",
+          "topic": "relevant topic from the list"
+        }}
     ]
 }}
 
@@ -208,13 +217,16 @@ Exam content (first 3000 characters):
                     result = json.loads(response.text)
                     questions = result.get("questions", [])
 
-                    # Add source_pdf info
+                    # DOUBLE CHECK: Ensure every question has the correct course name
                     for q in questions:
+                        q["course"] = course_name  # Force the correct course name
                         q["source_pdf"] = file_info["source_url"]
 
                     all_questions.extend(questions)
+                    print(f"✓ Extracted {len(questions)} questions from {file_info['filename']}")
+                    
                 except Exception as e:
-                    print(f"Error processing {file_info['source_url']}: {str(e)}")
+                    print(f"✗ Error processing {file_info['filename']}: {str(e)}")
                     continue
 
             random.shuffle(all_questions)
@@ -228,9 +240,12 @@ Exam content (first 3000 characters):
             }
 
             # --- SAVE QUESTIONS TO DATABASE ---
-            insert_questions_into_db(all_questions)
-
-            print(f"{len(all_questions)} questions stored to database")
+            if all_questions:
+                insert_questions_into_db(all_questions)
+                print(f"✓ {len(all_questions)} questions stored to database under course: '{course_name}'")
+            else:
+                print("⚠ No questions extracted from PDFs")
+                
         else:
             results["stored_questions"] = {
                 "message": "No PDFs downloaded, cannot find questions"
@@ -239,10 +254,13 @@ Exam content (first 3000 characters):
         return {
             "success": True,
             "message": "Pipeline completed successfully",
+            "course_name": course_name,  # Return this so frontend knows the exact course name
             "results": results
         }
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
 
 

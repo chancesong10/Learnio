@@ -38,18 +38,54 @@
                 <pre id="syllabus-summary" class="bg-gray-100 p-4 mt-2 rounded border"></pre>
             </div>
 
-            <!-- Generate Study Materials Section -->
-            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Generate Study Materials</h2>
-                <div class="flex flex-wrap gap-3">
-                    
-                    <button 
-                        id="create-practice-exam"
-                        class="px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 active:bg-green-700 transition"
+            <!-- Practice Exam Configuration Section -->
+            <div id="practice-exam-section" class="border border-gray-200 rounded-lg p-6 bg-gray-50" style="display: none;">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Create Practice Exam</h2>
+                
+                <!-- Course Selection -->
+                <div class="mb-4">
+                    <label for="course-select" class="block text-sm font-medium text-gray-700 mb-2">
+                        Select Course:
+                    </label>
+                    <select 
+                        id="course-select"
+                        class="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
-                        Create Practice Exam
-                    </button>
+                        <option value="">-- Select a course --</option>
+                    </select>
                 </div>
+
+                <!-- Topic Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Select Topics (optional - leave blank for all topics):
+                    </label>
+                    <div id="topics-checklist" class="bg-white border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto">
+                        <p class="text-gray-500 text-sm">Select a course to see available topics</p>
+                    </div>
+                </div>
+
+                <!-- Number of Questions -->
+                <div class="mb-4">
+                    <label for="num-questions" class="block text-sm font-medium text-gray-700 mb-2">
+                        Number of Questions:
+                    </label>
+                    <input 
+                        type="number" 
+                        id="num-questions"
+                        min="1"
+                        max="100"
+                        value="20"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                </div>
+
+                <button 
+                    id="create-practice-exam"
+                    class="px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 active:bg-green-700 transition"
+                >
+                    Generate Practice Exam
+                </button>
             </div>
 
             <!-- Output Section -->
