@@ -2,20 +2,20 @@
   "name": "study-toolkit",
   "version": "1.0.0",
   "description": "A study toolkit integrating FastAPI backend with an Electron frontend.",
-  "main": "src/main.ts",
+  "main": "dist/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run build && electron .",
     "build": "tsc",
     "dev": "electron . --dev"
   },
   "dependencies": {
-    "electron": "^25.0.0",
-    "axios": "^0.27.2"
+    "axios": "^1.13.2",
+    "electron": "^39.2.0"
   },
   "devDependencies": {
-    "typescript": "^4.9.5",
+    "playwright": "^1.24.0",
     "ts-loader": "^9.4.2",
-    "playwright": "^1.24.0"
+    "typescript": "^4.9.5"
   },
   "keywords": [
     "electron",

@@ -78,6 +78,10 @@ study-toolkit
    ```
    cd electron-app
    npm start
+
+Notes:
+- The `start` script now runs `tsc` first and then launches Electron so the app runs the compiled JavaScript from `dist/` instead of trying to run TypeScript directly. This avoids Node/Electron warnings about module type and avoids a performance penalty from reparsing the TypeScript source.
+- Alternative: If you prefer using native ECMAScript modules (ESM) instead of CommonJS, add `"type": "module"` to `package.json` and change `tsconfig.json` `module` to `esnext` / `es2020` and adjust any Node-only global usage (like `__dirname`). This requires migrating to ESM semantics and may need updates in imports/exports.
    ```
 
 ## License
