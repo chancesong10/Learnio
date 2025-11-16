@@ -100,5 +100,4 @@ ipcMain.handle('process-syllabus', async (event, fileBuffer) => {
 ipcMain.handle('extract-keywords', async () => ({ status: 'success', message: '✅ Backend pending', keywords: [] }));
 ipcMain.handle('search-web', async () => ({ status: 'success', message: '✅ Backend pending', results: [] }));
 ipcMain.handle('download-pdf', async () => ({ status: 'success', message: '✅ Backend pending' }));
-ipcMain.handle('generate-flashcards', async () => ({ status: 'success', message: '✅ Backend pending', flashcards: [] }));
 ipcMain.handle('create-practice-exam', async () => ({ status: 'success', message: '✅ Backend pending', exam: null }));
