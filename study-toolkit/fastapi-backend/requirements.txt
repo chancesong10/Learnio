@@ -9,3 +9,4 @@ google-generativeai
 serpapi
 nltk
 beautifulsoup4
+google-genai

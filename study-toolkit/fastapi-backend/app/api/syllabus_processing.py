@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 import asyncio
 from google import genai
 from google.genai import types
+from fastapi import APIRouter
+
+router = APIRouter()
 
 # Load .env from the project root
 env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
