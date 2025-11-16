@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'">
+    <title>Study Toolkit</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-100">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-8">
+        <h1 class="text-4xl font-bold text-gray-800 mb-8">Study Toolkit</h1>
+        
+        <div class="space-y-6">
+            <!-- Upload Syllabus Section -->
+            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Upload Syllabus</h2>
+                <label for="syllabus-upload" class="block text-sm font-medium text-gray-600 mb-2">
+                    Select a syllabus file:
+                </label>
+                <input 
+                    type="file" 
+                    id="syllabus-upload" 
+                    accept=".pdf,.doc,.docx,.txt"
+                    class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100"
+                >
+            </div>
+
+            <!-- Generate Study Materials Section -->
+            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Generate Study Materials</h2>
+                <div class="flex flex-wrap gap-3">
+                    <button 
+                        id="generate-flashcards"
+                        class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 active:bg-blue-700 transition"
+                    >
+                        Generate Flashcards
+                    </button>
+                    <button 
+                        id="create-practice-exam"
+                        class="px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 active:bg-green-700 transition"
+                    >
+                        Create Practice Exam
+                    </button>
+                </div>
+            </div>
+
+            <!-- Output Section -->
+            <div class="border border-gray-200 rounded-lg p-6 bg-gray-50">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Output</h2>
+                <div 
+                    id="output"
+                    class="bg-white border border-gray-300 rounded p-4 min-h-24 text-gray-600"
+                >
+                    <p>Results will appear here...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="renderer.js"></script>
+</body>
+</html>

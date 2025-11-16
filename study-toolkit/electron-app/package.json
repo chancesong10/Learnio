@@ -4,8 +4,8 @@
   "description": "A study toolkit integrating FastAPI backend with an Electron frontend.",
   "main": "dist/main.js",
   "scripts": {
+    "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && copy src\\renderer.html dist\\renderer.html",
     "start": "npm run build && electron .",
-    "build": "tsc",
     "dev": "electron . --dev"
   },
   "dependencies": {
@@ -13,7 +13,11 @@
     "electron": "^39.2.0"
   },
   "devDependencies": {
+    "autoprefixer": "^10.4.16",
     "playwright": "^1.24.0",
+    "postcss": "^8.4.31",
+    "postcss-cli": "^10.1.0",
+    "tailwindcss": "^3.3.6",
     "ts-loader": "^9.4.2",
     "typescript": "^4.9.5"
   },
