@@ -8,7 +8,6 @@ This project is a comprehensive study toolkit that integrates an Electron fronte
 - **Keyword Extraction**: Identify important keywords from the syllabus for better searchability.
 - **Web Searching**: Utilize SerpAPI to perform web searches based on extracted keywords.
 - **PDF Downloading**: Download PDFs from the web using Playwright.
-- **Flashcard Generation**: Create flashcards from notes and summaries for efficient studying.
 - **Practice Exam Creation**: Generate practice exams from uploaded materials.
 
 ## Project Structure
