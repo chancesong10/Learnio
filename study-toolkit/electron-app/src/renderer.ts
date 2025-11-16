@@ -281,7 +281,7 @@ async function updateTopicsChecklist(course: string) {
             const label = document.createElement('label');
             label.htmlFor = `topic-${index}`;
             label.textContent = topic;
-            label.className = 'text-sm text-gray-700 cursor-pointer';
+            label.className = 'text-sm text-white cursor-pointer';
             
             div.appendChild(checkbox);
             div.appendChild(label);
