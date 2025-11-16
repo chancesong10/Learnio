@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import sqlite3 from 'sqlite3';
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -74,6 +75,32 @@ function runPythonScript(scriptPath: string, args: string[]): Promise<any> {
 
         pyProcess.on('error', (err: Error) => {
             reject(new Error('Failed to spawn Python process: ' + err.message));
+        });
+    });
+}
+
+// -------------------------
+// Database helper
+// -------------------------
+const DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'question_bank.sqlite');
+
+function queryDatabase(query: string, params: any[] = []): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
+            if (err) {
+                reject(new Error(`Failed to open database: ${err.message}`));
+                return;
+            }
+        });
+
+        db.all(query, params, (err, rows) => {
+            if (err) {
+                db.close();
+                reject(new Error(`Database query failed: ${err.message}`));
+                return;
+            }
+            db.close();
+            resolve(rows || []);
         });
     });
 }
@@ -150,6 +177,61 @@ ipcMain.handle('create-practice-exam', async (event: IpcMainInvokeEvent, params:
     } catch (err: any) {
         console.error('Error creating practice exam:', err);
         return { status: 'error', message: '❌ ' + (err.message || String(err)), exam: null };
+    }
+});
+
+// NEW: Get all courses from database
+ipcMain.handle('get-courses', async (event: IpcMainInvokeEvent) => {
+    try {
+        // Try questions table first (has actual questions)
+        let rows = await queryDatabase('SELECT DISTINCT course FROM questions WHERE course IS NOT NULL AND course != ""');
+        
+        // If no courses in questions table, try courses table
+        if (rows.length === 0) {
+            rows = await queryDatabase('SELECT DISTINCT course FROM courses WHERE course IS NOT NULL AND course != ""');
+        }
+        
+        const courses = rows.map((row: any) => row.course);
+        return { status: 'success', courses };
+    } catch (err: any) {
+        console.error('Error fetching courses:', err);
+        return { status: 'error', message: err.message, courses: [] };
+    }
+});
+
+// NEW: Get topics for a specific course
+ipcMain.handle('get-topics', async (event: IpcMainInvokeEvent, course: string) => {
+    try {
+        // First try questions table
+        let rows = await queryDatabase(
+            'SELECT DISTINCT topics FROM questions WHERE course = ? AND topics IS NOT NULL AND topics != ""',
+            [course]
+        );
+        
+        let topics: string[] = [];
+        
+        if (rows.length > 0) {
+            // Topics might be comma-separated
+            const allTopics = new Set<string>();
+            rows.forEach((row: any) => {
+                const topicList = row.topics.split(',').map((t: string) => t.trim());
+                topicList.forEach((t: string) => allTopics.add(t));
+            });
+            topics = Array.from(allTopics);
+        }
+        
+        // If no topics from questions, try courses table
+        if (topics.length === 0) {
+            rows = await queryDatabase('SELECT topics FROM courses WHERE course = ?', [course]);
+            if (rows.length > 0 && rows[0].topics) {
+                topics = rows[0].topics.split(',').map((t: string) => t.trim());
+            }
+        }
+        
+        return { status: 'success', topics };
+    } catch (err: any) {
+        console.error('Error fetching topics:', err);
+        return { status: 'error', message: err.message, topics: [] };
     }
 });
 

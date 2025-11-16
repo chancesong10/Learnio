@@ -78,11 +78,12 @@ Syllabus text:
         if not isinstance(analysis.get("topics"), list):
             analysis["topics"] = []
 
-        print(f"[Gemini Analysis] Course: {analysis['course_name']}, Topics: {len(analysis['topics'])}")
+        # Fixed: Use stderr for debug output
+        print(f"[Gemini Analysis] Course: {analysis['course_name']}, Topics: {len(analysis['topics'])}", file=sys.stderr)
 
     except Exception as e:
-        print("Raw Gemini output:", response.text)
-        print(f"Exception occurred: {type(e).__name__} - {e}")
+        print("Raw Gemini output:", response.text, file=sys.stderr)
+        print(f"Exception occurred: {type(e).__name__} - {e}", file=sys.stderr)
         analysis = {
             "course_name": "Unknown Course",
             "topics": []
@@ -130,7 +131,7 @@ def insert_into_db(analysis: dict):
 # Main function
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: python syllabus_processing.py <path_to_pdf>")
+        print("Usage: python syllabus_processing.py <path_to_pdf>", file=sys.stderr)
         sys.exit(1)
 
     syllabus_file = sys.argv[1]
@@ -138,6 +139,7 @@ async def main():
     analysis = await analyze_syllabus_with_gemini(text)
 
     output = {**analysis}
+    # Only JSON output goes to stdout
     print(json.dumps(output, indent=4))
 
     insert_into_db(analysis)
