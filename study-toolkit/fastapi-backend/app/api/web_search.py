@@ -39,11 +39,12 @@ async def web_search(course_name: str):
         # Extract first 10 links
         links = []
         for item in data.get("organic_results", [])[:10]:
-            links.append({
+            link = item.get("link")
+            if link and link.lower().endswith(".pdf"):
+                links.append({
                 "title": item.get("title"),
                 "link": item.get("link"),
-                "snippet": item.get("snippet")
-            })
+                "snippet": item.get("snippet")})
         results[query] = links
 
     return results
