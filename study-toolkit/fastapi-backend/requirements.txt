@@ -1,0 +1,9 @@
+FastAPI==0.95.0
+uvicorn==0.22.0
+pydantic==1.10.7
+httpx==0.23.0
+playwright==1.30.0
+python-dotenv==1.0.0
+serpapi==2.0.0
+nltk==3.7
+beautifulsoup4==4.11.1
