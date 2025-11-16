@@ -55,7 +55,8 @@ study-toolkit
    cd study-toolkit
    ```
 
-2. **Set up the FastAPI backend**:
+2. **Set up .env.local**
+3. **Set up the FastAPI backend**:
    - Navigate to the `fastapi-backend` directory.
    - Install the required dependencies:
      ```
@@ -66,7 +67,7 @@ study-toolkit
      uvicorn app.main:app --reload
      ```
 
-3. **Set up the Electron app**:
+4. **Set up the Electron app**:
    - Navigate to the `electron-app` directory.
    - Install the required dependencies:
      ```
