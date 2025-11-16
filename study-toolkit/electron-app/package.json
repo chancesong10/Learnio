@@ -2,7 +2,6 @@
   "name": "study-toolkit",
   "version": "1.0.0",
   "description": "A study toolkit integrating FastAPI backend with an Electron frontend.",
-  "type": "module",
   "main": "dist/main.js",
   "scripts": {
     "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && copy src\\renderer.html dist\\renderer.html && copy src\\preload.cjs dist\\preload.cjs",

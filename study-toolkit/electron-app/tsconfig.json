@@ -11,6 +11,6 @@
     "rootDir": "./src",
     "lib": ["es2020", "dom"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/test_practice_exam.ts"],
   "exclude": ["node_modules", "**/*.spec.ts"]
 }
