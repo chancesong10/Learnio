@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 import sqlite3
 from pathlib import Path
+from .api.syllabus_processing import insert_into_db
 
 load_dotenv('.env.local')  # Load environment variables from .env.local
 
@@ -117,6 +118,8 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         results["course_info"] = analysis
         course_name = analysis.get("course_name", "Unknown Course")
         topics = analysis.get("topics", [])
+
+        insert_into_db(analysis)
 
         print(f"✓ Course identified: {course_name}")
         print(f"✓ Topics found: {len(topics)}")
