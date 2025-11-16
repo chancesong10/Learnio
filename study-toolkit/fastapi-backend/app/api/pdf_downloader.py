@@ -4,9 +4,11 @@ import os
 
 router = APIRouter()
 
-@router.post("/download-pdf/")
-def download_pdf(url: str = Query(...), file_name: str = Query(...)):
-    """Download a PDF file from a URL"""
+def download_pdf_file(url: str, file_name: str) -> dict:
+    """
+    Core function to download a PDF file from a URL
+    This can be reused by other modules
+    """
     try:
         print(f"Downloading PDF from: {url}")
         
@@ -34,3 +36,9 @@ def download_pdf(url: str = Query(...), file_name: str = Query(...)):
         raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/download-pdf/")
+def download_pdf(url: str = Query(...), file_name: str = Query(...)):
+    """Download a PDF file from a URL (API endpoint)"""
+    return download_pdf_file(url, file_name)
