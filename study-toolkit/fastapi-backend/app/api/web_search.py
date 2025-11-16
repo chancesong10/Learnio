@@ -1,9 +1,17 @@
 from fastapi import APIRouter, HTTPException
 import requests
+import os
+from dotenv import load_dotenv
+
+# Load .env.local
+load_dotenv(".env.local")
 
 router = APIRouter()
 
-SERPAPI_API_KEY = "your_serpapi_key"  # Replace with your actual SerpAPI key
+# Get API key from environment
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+if SERPAPI_API_KEY is None:
+    raise ValueError("SERPAPI_API_KEY not found in environment variables!")
 
 @router.get("/search")
 async def web_search(query: str):
