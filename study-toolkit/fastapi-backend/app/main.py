@@ -135,7 +135,7 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         os.makedirs("downloaded_exams", exist_ok=True)
         downloaded_files = []
         download_count = 0
-        max_downloads = 3
+        max_downloads = 10
 
         for query, links in search_results.items():
             for item in links[:max_downloads]:
@@ -166,7 +166,7 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         print(f"\n✓ Total PDFs downloaded: {len(downloaded_files)}")
 
         # STEP 4: Create practice exam from downloaded PDFs
-        print("\nStep 4: Creating practice exam...")
+        print("\nStep 4: Storing Questions from PDFs into Database...")
 
         all_questions = []
 
@@ -179,7 +179,7 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
                     prompt = f"""
 Analyze this past exam content for the course "{course_name}" covering topics: {', '.join(topics)}.
 
-Extract 5-10 practice questions that would help students prepare for this course.
+Extract practice questions that would help students prepare for this course.
 
 Format your response as JSON with this structure:
 {{
@@ -216,7 +216,7 @@ Exam content (first 3000 characters):
 
             random.shuffle(all_questions)
 
-            results["practice_exam"] = {
+            results["stored_questions"] = {
                 "course_name": course_name,
                 "topics": topics,
                 "total_questions": len(all_questions),
@@ -227,10 +227,10 @@ Exam content (first 3000 characters):
             # --- SAVE QUESTIONS TO DATABASE ---
             insert_questions_into_db(all_questions)
 
-            print(f"✓ Practice exam created with {len(all_questions)} questions")
+            print(f"{len(all_questions)} questions stored to database")
         else:
-            results["practice_exam"] = {
-                "message": "No PDFs downloaded, cannot create practice exam"
+            results["stored_questions"] = {
+                "message": "No PDFs downloaded, cannot find questions"
             }
 
         return {

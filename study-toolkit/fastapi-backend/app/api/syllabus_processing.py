@@ -35,7 +35,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 async def analyze_syllabus_with_gemini(text: str) -> dict:
     prompt = f"""
 Analyze the following course syllabus and extract:
-1. Course name
+1. Course name (Without Course Code)
 2. Topics that will be quizzed on (List where each entry is concise and no more than 3 words)
 
 Format your response as JSON with keys:
