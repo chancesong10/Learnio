@@ -10,3 +10,4 @@ serpapi
 nltk
 beautifulsoup4
 google-genai
+PyPDF2
