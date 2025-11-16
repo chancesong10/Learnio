@@ -8,43 +8,60 @@ if (!fs.existsSync(dataFolder)) {
 }
 
 const dbPath = path.join(dataFolder, "question_bank.sqlite");
-
-
 const db = new Database(dbPath);
 
-// Questions table
+
 db.prepare(`
-CREATE TABLE IF NOT EXISTS questions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    question_text TEXT NOT NULL,
-    course TEXT,
-    topics TEXT,
-    difficulty TEXT,
-    source_pdf TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-`).run();
+    CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_text TEXT NOT NULL,
+        course TEXT,
+        topics TEXT,
+        difficulty TEXT,
+        source_pdf TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(question_text, course)
+    )
+    `).run();
 
-// db.prepare(`
-// CREATE TABLE IF NOT EXISTS exams (
-//     id INTEGER PRIMARY KEY AUTOINCREMENT,
-//     course TEXT,
-//     year INTEGER,
-//     term TEXT,
-//     source_pdf TEXT,
-//     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-// )
-// `).run();
+// function rebuildQuestionsTable() {
+//     const tableExists = db
+//         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='questions'")
+//         .get();
 
-// db.prepare(`
-// CREATE TABLE IF NOT EXISTS flashcards (
-//     id INTEGER PRIMARY KEY AUTOINCREMENT,
-//     front TEXT NOT NULL,
-//     back TEXT NOT NULL,
-//     course TEXT,
-//     topic TEXT
-// )
-// `).run();
+//     if (tableExists) { //if the table exists, rename it so it could be deleted
+//         db.prepare(`ALTER TABLE questions RENAME TO old_questions`).run();
+//     }
+
+//     // Create new table with UNIQUE constraint
+//     db.prepare(`
+//     CREATE TABLE IF NOT EXISTS questions (
+//         id INTEGER PRIMARY KEY AUTOINCREMENT,
+//         question_text TEXT NOT NULL,
+//         course TEXT,
+//         topics TEXT,
+//         difficulty TEXT,
+//         source_pdf TEXT,
+//         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+//         UNIQUE(question_text, course)
+//     )
+//     `).run();
+
+//     if (tableExists) {
+//         // Copy distinct rows into new table to remove duplicates
+//         db.prepare(`
+//         INSERT OR IGNORE INTO questions (question_text, course, topics, difficulty, source_pdf, timestamp)
+//         SELECT DISTINCT question_text, course, topics, difficulty, source_pdf, timestamp
+//         FROM old_questions
+//         `).run();
+
+//         // delete
+//         db.prepare(`DROP TABLE old_questions`).run();
+//     }
+// }
+
+// // Rebuild table on startup
+// rebuildQuestionsTable();
 
 export function insertQuestion(q: {
     question_text: string,
@@ -54,7 +71,7 @@ export function insertQuestion(q: {
     source_pdf?: string
 }) {
     const stmt = db.prepare(`
-        INSERT INTO questions
+        INSERT OR IGNORE INTO questions
         (question_text, course, topics, difficulty, source_pdf)
         VALUES (?, ?, ?, ?, ?)
     `);
@@ -67,17 +84,26 @@ export function insertQuestion(q: {
     );
 }
 
-export function getQuestions(filter?: { //filter is optional
+export function getQuestions(filter?: { 
     course?: string,
     difficulty?: string,
-    type?: string
+    topics?: string
 }) {
     let query = "SELECT * FROM questions WHERE 1=1";
     const params: string[] = [];
+
     if (filter?.course) { query += " AND course=?"; params.push(filter.course); }
     if (filter?.difficulty) { query += " AND difficulty=?"; params.push(filter.difficulty); }
-    if (filter?.type) { query += " AND type=?"; params.push(filter.type); }
+    if (filter?.topics) { query += " AND topics LIKE ?"; params.push(`%${filter.topics}%`); }
+
     return db.prepare(query).all(...params);
+}
+
+export function deleteQuestions(ids: number[]) {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => "?").join(", ");
+    const stmt = db.prepare(`DELETE FROM questions WHERE id IN (${placeholders})`);
+    stmt.run(...ids);
 }
 
 export default db;
