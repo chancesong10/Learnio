@@ -42,7 +42,7 @@ async def analyze_syllabus_with_gemini(text: str) -> dict:
     prompt = f"""
 Analyze the following course syllabus and extract:
 1. Course name
-2. Main topics covered (list them)
+2. Topics that will be quizzed on (List where each entry is concise and no more than 3 words)
 
 Format your response as JSON with keys:
 - course_name (string)
@@ -61,8 +61,10 @@ Syllabus Summary:
 
     # Parse JSON output
     try:
-        analysis = response.parsed.dict()
-    except Exception:
+        analysis = json.loads(response.text)
+    except Exception as e:
+        print("Raw Gemini output:", response)
+        print(f"Exception occurred: {type(e).__name__} - {e}")
         analysis = {"course_name": "Unknown Course", "topics": []}
 
     return analysis
