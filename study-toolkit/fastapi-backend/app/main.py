@@ -93,7 +93,7 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         results["search_results"] = search_results
         print(f"✓ Search completed: {sum(len(v) for v in search_results.values())} PDFs found")
         
-        # STEP 3: Download the PDFs
+        # STEP 3: Download the PDFs using existing download_pdf_file function
         print("\nStep 3: Downloading PDFs...")
         
         os.makedirs("downloaded_exams", exist_ok=True)
@@ -112,23 +112,18 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
                         safe_name = f"exam_{download_count + 1}.pdf"
                         file_path = os.path.join("downloaded_exams", safe_name)
                         
-                        # Download the PDF
-                        response = requests.get(pdf_url, timeout=30)
-                        response.raise_for_status()
+                        # Use existing download_pdf_file function
+                        download_result = download_pdf_file(pdf_url, file_path)
                         
-                        with open(file_path, 'wb') as f:
-                            f.write(response.content)
-                        
-                        if os.path.exists(file_path):
-                            downloaded_files.append({
-                                "filename": safe_name,
-                                "path": file_path,
-                                "source_url": pdf_url,
-                                "title": item.get("title"),
-                                "size_bytes": os.path.getsize(file_path)
-                            })
-                            download_count += 1
-                            print(f"✓ Downloaded: {safe_name}")
+                        downloaded_files.append({
+                            "filename": safe_name,
+                            "path": file_path,
+                            "source_url": pdf_url,
+                            "title": item.get("title"),
+                            "size_bytes": download_result.get("size_bytes", 0)
+                        })
+                        download_count += 1
+                        print(f"✓ Downloaded: {safe_name}")
                     except Exception as e:
                         print(f"✗ Failed to download {pdf_url}: {str(e)}")
                         continue
