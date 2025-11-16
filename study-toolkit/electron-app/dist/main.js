@@ -40,7 +40,7 @@ app.on('activate', () => {
 // Python helper
 // -------------------------
 // Set this to your Python 3.11 executable
-const PYTHON_PATH = 'C:\\Users\\charl\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+const PYTHON_PATH = 'python';
 // Calculate the correct path to the sibling fastapi-backend folder
 const PYTHON_SCRIPT = path.resolve(__dirname, '..', '..', 'fastapi-backend', 'app', 'api', 'syllabus_processing.py');
 function runPythonScript(scriptPath, args) {
