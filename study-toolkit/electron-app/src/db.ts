@@ -24,6 +24,15 @@ db.prepare(`
     )
     `).run();
 
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course TEXT,
+            topics TEXT, -- store JSON array here
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(course)
+        )
+        `).run();
 // function rebuildQuestionsTable() {
 //     const tableExists = db
 //         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='questions'")
@@ -84,6 +93,36 @@ export function insertQuestion(q: {
     );
 }
 
+export function insertCourse(c: {
+    course: string,
+    topics?: string
+}) {
+    const stmt = db.prepare(`
+        INSERT OR IGNORE INTO courses
+        (course, topics)
+        VALUES (?, ?)
+    `);
+
+    stmt.run(
+        c.course || "",
+        c.topics || ""
+    );
+}
+
+export function getCourses(filter?: {
+    course?: string
+}) {
+    let query = "SELECT * FROM courses WHERE 1=1";
+    const params: string[] = [];
+
+    if (filter?.course) {
+        query += " AND course=?";
+        params.push(filter.course);
+    }
+
+    return db.prepare(query).all(...params);
+}
+
 export function getQuestions(filter?: { 
     course?: string,
     difficulty?: string,
@@ -103,6 +142,13 @@ export function deleteQuestions(ids: number[]) {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => "?").join(", ");
     const stmt = db.prepare(`DELETE FROM questions WHERE id IN (${placeholders})`);
+    stmt.run(...ids);
+}
+
+export function deleteCourses(ids: number[]) {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => "?").join(", ");
+    const stmt = db.prepare(`DELETE FROM courses WHERE id IN (${placeholders})`);
     stmt.run(...ids);
 }
 

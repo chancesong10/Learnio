@@ -8,6 +8,8 @@ import asyncio
 from google import genai
 from google.genai import types
 from fastapi import APIRouter
+import sqlite3
+from typing import List
 
 router = APIRouter()
 
@@ -28,14 +30,6 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             if page_text:
                 text += page_text + "\n"
         return text.strip()
-
-# Pydantic model for structured JSON output
-from pydantic import BaseModel
-from typing import List
-
-class SyllabusAnalysis(BaseModel):
-    course_name: str
-    topics: List[str]
 
 # Async function to analyze syllabus using Gemini
 async def analyze_syllabus_with_gemini(text: str) -> dict:
@@ -69,6 +63,43 @@ Syllabus Summary:
 
     return analysis
 
+# Insert analysis into SQLite database
+def insert_into_db(analysis: dict):
+    project_root = Path(__file__).resolve().parents[3]
+    db_path = project_root / "data" / "question_bank.sqlite"
+
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database not found at: {db_path}")
+
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # Ensure courses table exists
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course TEXT UNIQUE,
+            topics TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    course_name = analysis.get("course_name", "Unknown Course")
+    topics = analysis.get("topics", [])
+    topics_str = ", ".join(topics)
+
+    c.execute("""
+        INSERT OR IGNORE INTO courses (course, topics)
+        VALUES (?, ?)
+    """, (course_name, topics_str))
+
+    conn.commit()
+    conn.close()
+
+    print("[OK] Saved to database:", file=sys.stderr)
+    print(f"  Course: {course_name}", file=sys.stderr)
+    print(f"  Topics: {len(topics)} topics", file=sys.stderr)
+
 # Main function
 async def main():
     if len(sys.argv) < 2:
@@ -78,8 +109,13 @@ async def main():
     syllabus_file = sys.argv[1]
     text = extract_text_from_pdf(syllabus_file)
     analysis = await analyze_syllabus_with_gemini(text)
-    output = {"raw_text": text, **analysis}
+
+    # Print analysis for debugging
+    output = {**analysis}
     print(json.dumps(output, indent=4))
+
+    # Save to database
+    insert_into_db(analysis)
 
 if __name__ == "__main__":
     asyncio.run(main())
