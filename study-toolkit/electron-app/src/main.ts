@@ -1,3 +1,4 @@
+
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import * as url from 'url';
@@ -11,7 +12,7 @@ function createWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
-            enableRemoteModule: false,
+            // enableRemoteModule is deprecated and removed - no longer needed
             nodeIntegration: false,
         },
     });
@@ -42,5 +43,3 @@ app.on('activate', () => {
         createWindow();
     }
 });
-
-// IPC communication setup can be added here for backend interaction.

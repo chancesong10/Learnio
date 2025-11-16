@@ -1,67 +1,45 @@
+"use strict";
 // This file handles the user interface logic for the Electron app. 
 // It manages user interactions and communicates with the FastAPI backend.
-
-// Note: In renderer process, we don't import ipcRenderer directly
-// Instead, we use the api exposed via contextBridge in preload.ts
-
-// Declare the api type for TypeScript
-declare global {
-    interface Window {
-        api: {
-            fetchSyllabus: (syllabusData: any) => Promise<any>;
-            extractKeywords: (text: string) => Promise<any>;
-            searchWeb: (query: string) => Promise<any>;
-            downloadPDF: (url: string) => Promise<any>;
-            generateFlashcards: (notes: any) => Promise<any>;
-            createPracticeExam: (materials: any) => Promise<any>;
-        };
-    }
-}
-
-// This makes the file a module, allowing the global declaration to work
-export {};
-
-const syllabusUpload = document.getElementById('syllabus-upload') as HTMLInputElement;
+Object.defineProperty(exports, "__esModule", { value: true });
+const syllabusUpload = document.getElementById('syllabus-upload');
 if (syllabusUpload) {
     syllabusUpload.addEventListener('change', (event) => {
-        const target = event.target as HTMLInputElement;
+        const target = event.target;
         if (target && target.files) {
             const file = target.files[0];
             if (file) {
                 const formData = new FormData();
                 formData.append('file', file);
-
                 // Use the exposed api instead of ipcRenderer
-                window.api.fetchSyllabus(formData).then((data: any) => {
+                window.api.fetchSyllabus(formData).then((data) => {
                     console.log('Syllabus processed:', data);
                     // Update the UI with the processed data
-                }).catch((err: any) => {
+                }).catch((err) => {
                     console.error('Error processing syllabus:', err);
                 });
             }
         }
     });
 }
-
 const generateFlashcardsBtn = document.getElementById('generate-flashcards');
 if (generateFlashcardsBtn) {
     generateFlashcardsBtn.addEventListener('click', () => {
-        window.api.generateFlashcards({}).then((flashcards: any) => {
+        window.api.generateFlashcards({}).then((flashcards) => {
             console.log('Flashcards generated:', flashcards);
             // Update the UI with the flashcards
-        }).catch((err: any) => {
+        }).catch((err) => {
             console.error('Error generating flashcards:', err);
         });
     });
 }
-
 const createPracticeExamBtn = document.getElementById('create-practice-exam');
 if (createPracticeExamBtn) {
     createPracticeExamBtn.addEventListener('click', () => {
-        window.api.createPracticeExam({}).then((exam: any) => {
+        window.api.createPracticeExam({}).then((exam) => {
             console.log('Practice exam created:', exam);
             // Update the UI with the exam
-        }).catch((err: any) => {
+        }).catch((err) => {
             console.error('Error creating practice exam:', err);
         });
     });
