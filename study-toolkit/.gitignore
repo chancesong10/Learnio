@@ -1,1 +1,2 @@
 electron-app/node_modules/
+.env.local
