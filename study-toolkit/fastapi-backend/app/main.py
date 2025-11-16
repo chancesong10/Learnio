@@ -210,11 +210,11 @@ Exam content (first 3000 characters):
 
                     # Add source_pdf info
                     for q in questions:
-                        q["source_pdf"] = file_info["filename"]
+                        q["source_pdf"] = file_info["source_url"]
 
                     all_questions.extend(questions)
                 except Exception as e:
-                    print(f"Error processing {file_info['filename']}: {str(e)}")
+                    print(f"Error processing {file_info['source_url']}: {str(e)}")
                     continue
 
             random.shuffle(all_questions)
@@ -224,7 +224,7 @@ Exam content (first 3000 characters):
                 "topics": topics,
                 "total_questions": len(all_questions),
                 "questions": all_questions[:20],
-                "sources": [f["filename"] for f in downloaded_files]
+                "sources": [f["source_url"] for f in downloaded_files]
             }
 
             # --- SAVE QUESTIONS TO DATABASE ---
