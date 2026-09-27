@@ -3,11 +3,10 @@
 declare global {
     interface Window {
         api: {
-            processSyllabus: (fileBuffer: ArrayBuffer) => Promise<any>;
+            processSyllabus: (fileBuffer: ArrayBuffer, fileName?: string) => Promise<any>;
             extractKeywords: (text: string) => Promise<any>;
-            searchWeb: (query: string) => Promise<any>;
-            downloadPDF: (url: string) => Promise<any>;
-            generateFlashcards: (notes: any) => Promise<any>;
+            searchWeb: (courseName: string) => Promise<any>;
+            generateFlashcards: (notes: string[]) => Promise<any>;
             createPracticeExam: (materials: any) => Promise<any>;
             getCourses: () => Promise<any>;
             getTopics: (course: string) => Promise<any>;
@@ -38,8 +37,8 @@ function formatSuccessMessage(title: string, message: string): string {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
         </svg>
         <div>
-            <h3 class="text-green-300 font-semibold text-lg">${title}</h3>
-            <p class="text-green-400 mt-1">${message}</p>
+            <h3 class="text-green-300 font-semibold text-lg">${escapeHtml(title)}</h3>
+            <p class="text-green-400 mt-1">${escapeHtml(message)}</p>
         </div>
     </div>
 </div>`;
@@ -47,14 +46,14 @@ function formatSuccessMessage(title: string, message: string): string {
 
 function formatErrorMessage(title: string, message: string): string {
     return `
-<div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+<div class="bg-red-900/30 border-l-4 border-red-500 p-4 rounded-lg">
     <div class="flex items-start">
-        <svg class="w-6 h-6 text-red-500 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-6 h-6 text-red-400 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
         </svg>
         <div>
-            <h3 class="text-red-800 font-semibold text-lg">${title}</h3>
-            <p class="text-red-700 mt-1">${message}</p>
+            <h3 class="text-red-300 font-semibold text-lg">${escapeHtml(title)}</h3>
+            <p class="text-red-400 mt-1 whitespace-pre-line">${escapeHtml(message)}</p>
         </div>
     </div>
 </div>`;
@@ -62,14 +61,14 @@ function formatErrorMessage(title: string, message: string): string {
 
 function formatLoadingMessage(message: string): string {
     return `
-<div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
+<div class="bg-blue-900/30 border-l-4 border-blue-500 p-4 rounded-lg">
     <div class="flex items-start">
-        <svg class="animate-spin w-6 h-6 text-blue-500 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+        <svg class="animate-spin w-6 h-6 text-blue-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <div>
-            <p class="text-blue-700 font-medium">${message}</p>
+            <p class="text-blue-300 font-medium">${escapeHtml(message)}</p>
         </div>
     </div>
 </div>`;
@@ -79,6 +78,30 @@ function escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function formatPipelineSummary(result: any): string {
+    if (result.status !== 'success') {
+        return result.message || '❌ Failed to process syllabus';
+    }
+
+    const results = result.data?.results ?? {};
+    const topics: string[] = results.course_info?.topics ?? [];
+    const pdfCount = results.downloaded_pdfs?.length ?? 0;
+    const questionCount = results.stored_questions?.total_questions ?? 0;
+
+    const lines = [
+        result.message,
+        '',
+        `Course: ${result.data?.course_name ?? 'Unknown'}`,
+        `Topics (${topics.length}): ${topics.join(', ') || 'none found'}`,
+        `Past exam PDFs downloaded: ${pdfCount}`,
+        `Questions added to question bank: ${questionCount}`,
+    ];
+    if (questionCount === 0) {
+        lines.push('', '⚠️  No questions were found online for this course, so practice exams will be empty.');
+    }
+    return lines.join('\n');
 }
 
 function formatPracticeExam(exam: any[]): string {
@@ -94,21 +117,21 @@ function formatPracticeExam(exam: any[]): string {
         const difficulty = question.difficulty || '';
         
         html += `
-        <div class="bg-gradient-to-r from-white to-gray-50 border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="bg-gray-900/60 border border-gray-700 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow duration-200">
             <div class="flex items-start gap-4">
                 <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-md">
                     ${index + 1}
                 </div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-gray-800 font-medium leading-relaxed mb-3">${escapeHtml(questionText)}</p>
+                    <p class="text-gray-100 font-medium leading-relaxed mb-3">${escapeHtml(questionText)}</p>
                     <div class="flex flex-wrap gap-2">
-                        ${topics ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                        ${topics ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-900/40 text-purple-300 border border-purple-700">
                             📚 ${escapeHtml(topics)}
                         </span>` : ''}
                         ${difficulty ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                            difficulty.toLowerCase() === 'easy' ? 'bg-green-100 text-green-800 border border-green-200' :
-                            difficulty.toLowerCase() === 'medium' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-                            'bg-red-100 text-red-800 border border-red-200'
+                            difficulty.toLowerCase() === 'easy' ? 'bg-green-900/40 text-green-300 border border-green-700' :
+                            difficulty.toLowerCase() === 'medium' ? 'bg-yellow-900/40 text-yellow-300 border border-yellow-700' :
+                            'bg-red-900/40 text-red-300 border border-red-700'
                         }">
                             ${difficulty.toLowerCase() === 'easy' ? '⭐' : difficulty.toLowerCase() === 'medium' ? '⭐⭐' : '⭐⭐⭐'} ${escapeHtml(difficulty.charAt(0).toUpperCase() + difficulty.slice(1))}
                         </span>` : ''}
@@ -166,12 +189,10 @@ if (summarizeBtn) {
             console.log('File read, size:', fileBuffer.byteLength);
             
             console.log('Calling window.api.processSyllabus');
-            const result = await window.api.processSyllabus(fileBuffer);
+            const result = await window.api.processSyllabus(fileBuffer, file.name);
             console.log('Got result:', result);
             
-            // Display the summary
-            const resultText = JSON.stringify(result, null, 2);
-            if (summaryOutput) summaryOutput.innerText = resultText;
+            if (summaryOutput) summaryOutput.innerText = formatPipelineSummary(result);
             
             // Refresh the courses dropdown to include the new course
             if (result.status === 'success') {
@@ -184,16 +205,13 @@ if (summarizeBtn) {
                 
                 // If the pipeline returned a course_name, auto-select it
                 if (result.data?.course_name && courseSelect) {
-                    setTimeout(async () => {
-                        const courseName = result.data.course_name;
-                        courseSelect.value = courseName;
-                        await updateTopicsChecklist(courseName);
-                        
-                        if (summaryOutput) {
-                            const currentText = summaryOutput.innerText;
-                            summaryOutput.innerText = `${currentText}\n\n✅ Auto-selected course: "${courseName}"`;
-                        }
-                    }, 500);
+                    const courseName = result.data.course_name;
+                    courseSelect.value = courseName;
+                    await updateTopicsChecklist(courseName);
+
+                    if (summaryOutput) {
+                        summaryOutput.innerText += `\n\n✅ Auto-selected course: "${courseName}"`;
+                    }
                 }
             }
             
@@ -333,44 +351,44 @@ if (createPracticeExamBtn) {
                     let headerHtml = `
                     <div class="mb-6">
                         ${formatSuccessMessage('Practice Exam Created! 🎉', `Successfully generated ${exam.exam.length} practice questions`)}
-                        <div class="mt-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-5 border border-gray-200 shadow-sm">
+                        <div class="mt-4 bg-gray-900/60 rounded-lg p-5 border border-gray-700 shadow-sm">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                 <div class="flex items-center">
-                                    <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                                     </svg>
                                     <div>
-                                        <span class="text-gray-600 font-medium">Course:</span>
-                                        <span class="text-gray-800 ml-2 font-semibold">${escapeHtml(selectedCourse)}</span>
+                                        <span class="text-gray-400 font-medium">Course:</span>
+                                        <span class="text-gray-100 ml-2 font-semibold">${escapeHtml(selectedCourse)}</span>
                                     </div>
                                 </div>
                                 <div class="flex items-center">
-                                    <svg class="w-5 h-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                     </svg>
                                     <div>
-                                        <span class="text-gray-600 font-medium">Questions:</span>
-                                        <span class="text-gray-800 ml-2 font-semibold">${exam.exam.length}</span>
+                                        <span class="text-gray-400 font-medium">Questions:</span>
+                                        <span class="text-gray-100 ml-2 font-semibold">${exam.exam.length}</span>
                                     </div>
                                 </div>
                                 ${selectedTopics.length > 0 ? `
                                 <div class="col-span-full flex items-start">
-                                    <svg class="w-5 h-5 text-purple-600 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5 text-purple-400 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
                                     </svg>
                                     <div>
-                                        <span class="text-gray-600 font-medium">Selected Topics:</span>
+                                        <span class="text-gray-400 font-medium">Selected Topics:</span>
                                         <div class="mt-1 flex flex-wrap gap-1">
-                                            ${selectedTopics.map(t => `<span class="inline-block px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">${escapeHtml(t)}</span>`).join('')}
+                                            ${selectedTopics.map(t => `<span class="inline-block px-2 py-0.5 bg-purple-900/40 text-purple-300 rounded-full text-xs font-medium">${escapeHtml(t)}</span>`).join('')}
                                         </div>
                                     </div>
                                 </div>
                                 ` : `
                                 <div class="col-span-full flex items-center">
-                                    <svg class="w-5 h-5 text-indigo-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-5 h-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
                                     </svg>
-                                    <span class="text-gray-600 font-medium">Topics: <span class="text-gray-800 ml-1">All topics included</span></span>
+                                    <span class="text-gray-400 font-medium">Topics: <span class="text-gray-100 ml-1">All topics included</span></span>
                                 </div>
                                 `}
                             </div>

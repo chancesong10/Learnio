@@ -1,13 +1,8 @@
 fastapi
 uvicorn
 pydantic
+python-multipart
 httpx
-playwright
 python-dotenv
-PyPDF2
-google-generativeai
-serpapi
-nltk
-beautifulsoup4
 google-genai
-PyPDF2
+scikit-learn

@@ -4,12 +4,19 @@ This directory contains the FastAPI backend for the Study Toolkit application. T
 
 ## Features
 
-- **Syllabus Processing**: Extract course names and topics from syllabi.
-- **Keyword Extraction**: Identify important keywords from the syllabus for further processing.
-- **Web Searching**: Utilize SerpAPI to perform web searches based on extracted keywords.
-- **PDF Downloading**: Download PDFs from the web using Playwright.
-- **Flashcard Generation**: Create flashcards from notes and summaries for effective studying.
-- **Practice Exam Creation**: Generate practice exams from uploaded materials.
+- **Syllabus Pipeline** (`POST /api/process-syllabus-pipeline/`): analyze a syllabus (PDF or text) with Gemini, search for past exam PDFs with SerpAPI, download them, and store extracted questions in the question bank.
+- **Practice Exam Creation** (`POST /create-practice-exam/`): pick random questions for a course, optionally filtered by topic.
+- **Web Searching** (`GET /search`): find past exam and notes PDFs for a course.
+- **Keyword Extraction** (`POST /extract_keywords/`): TF-IDF keywords from text.
+- **Flashcard Generation** (`POST /generate_flashcards`): question/answer flashcards from notes with Gemini.
+
+## Configuration
+
+The backend reads `study-toolkit/.env.local` (see `study-toolkit/.env.example`):
+
+- `GEMINI_API_KEY` (required; free key from https://aistudio.google.com/apikey)
+- `SERPAPI_API_KEY` (required for search and the pipeline)
+- `GEMINI_MODEL` (optional, defaults to `gemini-2.5-flash`)
 
 ## Installation
 
@@ -21,7 +28,7 @@ pip install -r requirements.txt
 
 ## Running the Application
 
-To start the FastAPI server, execute:
+From the `fastapi-backend` directory, start the FastAPI server with:
 
 ```
 uvicorn app.main:app --reload

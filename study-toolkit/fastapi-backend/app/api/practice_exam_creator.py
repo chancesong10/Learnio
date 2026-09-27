@@ -1,9 +1,10 @@
-from pathlib import Path
 import sqlite3
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import random
+
+from ..config import DB_PATH, get_db_connection
 
 router = APIRouter()
 
@@ -15,12 +16,8 @@ class PracticeExamRequest(BaseModel):
 @router.post("/create-practice-exam/")
 def create_practice_exam(req: PracticeExamRequest):
     try:
-        # Correct relative path from this file
-        db_path = Path(__file__).parents[3] / "data" / "question_bank.sqlite"
-        print("Connecting to DB at:", db_path.resolve())
-
-        # Convert Path to string for sqlite3
-        conn = sqlite3.connect(str(db_path))
+        print("Connecting to DB at:", DB_PATH)
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
@@ -33,14 +30,17 @@ def create_practice_exam(req: PracticeExamRequest):
         available_courses = [row['course'] for row in c.fetchall()]
         print(f"Available courses in DB: {available_courses}")
 
-        # Fetch questions with case-insensitive and partial matching
+        # Course names are stored exactly as Gemini produced them, so match the
+        # whole name (case-insensitive) rather than a substring — otherwise
+        # "Calculus" would also pull in "Calculus II" questions
+
         questions = []
         
         if not req.topics:
             # Get all questions for this course (case-insensitive)
             c.execute(
-                "SELECT * FROM questions WHERE LOWER(course) LIKE LOWER(?)",
-                (f"%{req.course}%",)
+                "SELECT * FROM questions WHERE course = ? COLLATE NOCASE",
+                (req.course,)
             )
             questions = c.fetchall()
             print(f"Found {len(questions)} questions for course '{req.course}'")
@@ -49,9 +49,9 @@ def create_practice_exam(req: PracticeExamRequest):
             for topic in req.topics:
                 c.execute(
                     """SELECT * FROM questions 
-                       WHERE LOWER(course) LIKE LOWER(?) 
-                       AND LOWER(topics) LIKE LOWER(?)""",
-                    (f"%{req.course}%", f"%{topic}%")
+                       WHERE course = ? COLLATE NOCASE
+                       AND topics LIKE ?""",
+                    (req.course, f"%{topic}%")
                 )
                 topic_questions = c.fetchall()
                 questions.extend(topic_questions)

@@ -1,8 +1,5 @@
 import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
-import * as os from 'os';
-import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import sqlite3 from 'sqlite3';
 
@@ -43,64 +40,26 @@ app.on('activate', () => {
 });
 
 // -------------------------
-// Python helper
-// -------------------------
-const PYTHON_PATH = 'python';
-const PYTHON_SCRIPT = path.resolve(__dirname, '..', '..', 'fastapi-backend', 'app', 'api', 'syllabus_processing.py');
-
-function runPythonScript(scriptPath: string, args: string[]): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const pyProcess = spawn(PYTHON_PATH, [scriptPath, ...args]);
-
-        pyProcess.stdout.on('data', data => console.log('Python version:', data.toString()));
-        pyProcess.stderr.on('data', data => console.error('Python error:', data.toString()));
-
-        let stdout = '';
-        let stderr = '';
-
-        pyProcess.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
-        pyProcess.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-        pyProcess.on('close', (code: number) => {
-            if (code === 0) {
-                try {
-                    resolve(JSON.parse(stdout));
-                } catch (e) {
-                    reject(new Error('Failed to parse Python output: ' + String(e)));
-                }
-            } else {
-                reject(new Error(`Python script failed (code ${code}):\n${stderr}`));
-            }
-        });
-
-        pyProcess.on('error', (err: Error) => {
-            reject(new Error('Failed to spawn Python process: ' + err.message));
-        });
-    });
-}
-
-// -------------------------
 // Database helper
 // -------------------------
 const DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'question_bank.sqlite');
 
 function queryDatabase(query: string, params: any[] = []): Promise<any[]> {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
-            if (err) {
-                reject(new Error(`Failed to open database: ${err.message}`));
+        const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (openErr) => {
+            if (openErr) {
+                reject(new Error(`Failed to open database: ${openErr.message}`));
                 return;
             }
-        });
 
-        db.all(query, params, (err, rows) => {
-            if (err) {
+            db.all(query, params, (err, rows) => {
                 db.close();
-                reject(new Error(`Database query failed: ${err.message}`));
-                return;
-            }
-            db.close();
-            resolve(rows || []);
+                if (err) {
+                    reject(new Error(`Database query failed: ${err.message}`));
+                    return;
+                }
+                resolve(rows || []);
+            });
         });
     });
 }
@@ -108,49 +67,52 @@ function queryDatabase(query: string, params: any[] = []): Promise<any[]> {
 // -------------------------
 // HTTP helper for FastAPI calls
 // -------------------------
+const API_BASE_URL = 'http://127.0.0.1:8000';
+
 async function callFastAPI(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
-    const url = `http://localhost:8000${endpoint}`;
-    const options: RequestInit = {
-        method,
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    };
-    
-    if (body && method !== 'GET') {
+    const options: RequestInit = { method };
+
+    if (body instanceof FormData) {
+        // fetch sets the multipart Content-Type (with boundary) itself
+        options.body = body;
+    } else if (body !== undefined && method !== 'GET') {
+        options.headers = { 'Content-Type': 'application/json' };
         options.body = JSON.stringify(body);
     }
-    
+
+    let response: Response;
     try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`FastAPI error: ${response.status} - ${errorText}`);
-        }
-        return await response.json();
+        response = await fetch(`${API_BASE_URL}${endpoint}`, options);
     } catch (error: any) {
-        throw new Error(`Failed to call FastAPI: ${error.message}`);
+        throw new Error(
+            `Could not reach the backend at ${API_BASE_URL} (${error.message}). ` +
+            'Start it with: cd study-toolkit/fastapi-backend && uvicorn app.main:app'
+        );
     }
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        let detail = errorText;
+        try { detail = JSON.parse(errorText).detail ?? errorText; } catch {}
+        throw new Error(`Backend error ${response.status}: ${detail}`);
+    }
+    return await response.json();
 }
 
 // -------------------------
 // IPC handlers
 // -------------------------
-ipcMain.handle('process-syllabus', async (event: IpcMainInvokeEvent, fileBuffer: ArrayBuffer) => {
+// Runs the full pipeline: analyze syllabus -> search past exams -> download -> extract questions
+ipcMain.handle('process-syllabus', async (event: IpcMainInvokeEvent, fileBuffer: ArrayBuffer, fileName?: string) => {
     if (!fileBuffer) return { status: 'error', message: '❌ No file provided', data: null };
 
-    const tempFile = path.join(os.tmpdir(), `syllabus_${Date.now()}.pdf`);
-
     try {
-        const buffer = Buffer.from(new Uint8Array(fileBuffer));
-        fs.writeFileSync(tempFile, buffer);
+        const form = new FormData();
+        form.append('syllabus', new Blob([fileBuffer], { type: 'application/pdf' }), fileName || 'syllabus.pdf');
 
-        const result = await runPythonScript(PYTHON_SCRIPT, [tempFile]);
-
-        fs.unlinkSync(tempFile);
+        const result = await callFastAPI('/api/process-syllabus-pipeline/', 'POST', form);
         return { status: 'success', message: '✅ Syllabus processed successfully', data: result };
     } catch (err: any) {
-        try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
         return { status: 'error', message: '❌ ' + (err.message || String(err)), data: null };
     }
 });
@@ -201,7 +163,7 @@ ipcMain.handle('get-topics', async (event: IpcMainInvokeEvent, course: string) =
     try {
         // First try questions table
         let rows = await queryDatabase(
-            'SELECT DISTINCT topics FROM questions WHERE course = ? AND topics IS NOT NULL AND topics != ""',
+            'SELECT DISTINCT topics FROM questions WHERE course = ? COLLATE NOCASE AND topics IS NOT NULL AND topics != ""',
             [course]
         );
         
@@ -212,16 +174,16 @@ ipcMain.handle('get-topics', async (event: IpcMainInvokeEvent, course: string) =
             const allTopics = new Set<string>();
             rows.forEach((row: any) => {
                 const topicList = row.topics.split(',').map((t: string) => t.trim());
-                topicList.forEach((t: string) => allTopics.add(t));
+                topicList.filter(Boolean).forEach((t: string) => allTopics.add(t));
             });
             topics = Array.from(allTopics);
         }
         
         // If no topics from questions, try courses table
         if (topics.length === 0) {
-            rows = await queryDatabase('SELECT topics FROM courses WHERE course = ?', [course]);
+            rows = await queryDatabase('SELECT topics FROM courses WHERE course = ? COLLATE NOCASE', [course]);
             if (rows.length > 0 && rows[0].topics) {
-                topics = rows[0].topics.split(',').map((t: string) => t.trim());
+                topics = rows[0].topics.split(',').map((t: string) => t.trim()).filter(Boolean);
             }
         }
         
@@ -233,8 +195,31 @@ ipcMain.handle('get-topics', async (event: IpcMainInvokeEvent, course: string) =
 });
 
 // -------------------------
-// Stub handlers for other features
+// Other backend features
 // -------------------------
-ipcMain.handle('extract-keywords', async () => ({ status: 'success', message: '✅ Backend pending', keywords: [] }));
-ipcMain.handle('search-web', async () => ({ status: 'success', message: '✅ Backend pending', results: [] }));
-ipcMain.handle('download-pdf', async () => ({ status: 'success', message: '✅ Backend pending' }));
+ipcMain.handle('extract-keywords', async (event: IpcMainInvokeEvent, text: string) => {
+    try {
+        const keywords = await callFastAPI('/extract_keywords/', 'POST', { text });
+        return { status: 'success', keywords };
+    } catch (err: any) {
+        return { status: 'error', message: '❌ ' + (err.message || String(err)), keywords: [] };
+    }
+});
+
+ipcMain.handle('search-web', async (event: IpcMainInvokeEvent, courseName: string) => {
+    try {
+        const results = await callFastAPI(`/search?course_name=${encodeURIComponent(courseName)}`);
+        return { status: 'success', results };
+    } catch (err: any) {
+        return { status: 'error', message: '❌ ' + (err.message || String(err)), results: {} };
+    }
+});
+
+ipcMain.handle('generate-flashcards', async (event: IpcMainInvokeEvent, notes: string[]) => {
+    try {
+        const flashcards = await callFastAPI('/generate_flashcards', 'POST', notes);
+        return { status: 'success', flashcards };
+    } catch (err: any) {
+        return { status: 'error', message: '❌ ' + (err.message || String(err)), flashcards: [] };
+    }
+});

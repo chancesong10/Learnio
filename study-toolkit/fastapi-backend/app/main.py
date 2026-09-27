@@ -1,42 +1,57 @@
 from fastapi import FastAPI, UploadFile, HTTPException, File
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import tempfile
-import os
-import requests
-import json
+import asyncio
+import re
 import random
-from google import genai
-from google.genai import types
-import sqlite3
-from pathlib import Path
-from .api.syllabus_processing import insert_into_db
+import httpx
 
-load_dotenv('.env.local')
+from .config import DOWNLOAD_DIR, get_db_connection
+from .llm import generate_json, pdf_part
 
 # Import your existing routers
 from .api import (
-    syllabus_processing, 
-    keyword_extraction, 
-    web_search, 
-    pdf_downloader, 
-    flashcard_generator, 
+    syllabus_processing,
+    keyword_extraction,
+    web_search,
+    flashcard_generator,
     practice_exam_creator
 )
 
 # Import helper functions for the pipeline
-from .api.syllabus_processing import extract_text_from_pdf, analyze_syllabus_with_gemini
+from .api.syllabus_processing import analyze_syllabus, insert_into_db
+from .api.web_search import web_search as perform_web_search
 from .api.pdf_downloader import download_pdf_file
 
+# The Electron app calls this API from its main process, which is not subject to
+# CORS, so no CORS middleware is installed: browser pages can't read responses.
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Create the question bank on startup so the Electron app can open it on a fresh clone
+get_db_connection().close()
+
+MAX_DOWNLOADS = 10
+# Limit parallel Gemini requests to stay under the free tier's per-minute limits
+GEMINI_CONCURRENCY = 2
+
+QUESTIONS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "difficulty": {"type": "string", "enum": ["easy", "medium", "hard"]},
+                    "topic": {"type": "string"},
+                },
+                "required": ["question", "difficulty", "topic"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["questions"],
+    "additionalProperties": False,
+}
 
 @app.get("/")
 def read_root():
@@ -46,77 +61,79 @@ def read_root():
 app.include_router(syllabus_processing.router)
 app.include_router(keyword_extraction.router)
 app.include_router(web_search.router)
-app.include_router(pdf_downloader.router)
 app.include_router(flashcard_generator.router)
 app.include_router(practice_exam_creator.router)
 
 
 # --- HELPER: Insert questions into SQLite database ---
 def insert_questions_into_db(questions: list):
-    project_root = Path(__file__).resolve().parents[2]
-    db_path = project_root / "data" / "question_bank.sqlite"
-
-    if not db_path.exists():
-        raise FileNotFoundError(f"Database not found at {db_path}")
-
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-
-    # Ensure questions table exists
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            question_text TEXT NOT NULL,
-            course TEXT,
-            topics TEXT,
-            difficulty TEXT,
-            source_pdf TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(question_text, course)
-        )
-    """)
-
-    for q in questions:
-        question_text = q.get("question") or ""
-        course = q.get("course") or ""
-        topics = q.get("topic") or ""
-        difficulty = q.get("difficulty") or ""
-        source_pdf = q.get("source_pdf") or ""
-
-        c.execute("""
-            INSERT OR IGNORE INTO questions
-            (question_text, course, topics, difficulty, source_pdf)
-            VALUES (?, ?, ?, ?, ?)
-        """, (question_text, course, topics, difficulty, source_pdf))
-
-    conn.commit()
-    conn.close()
+    conn = get_db_connection()
+    try:
+        for q in questions:
+            conn.execute("""
+                INSERT OR IGNORE INTO questions
+                (question_text, course, topics, difficulty, source_pdf)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                q.get("question") or "",
+                q.get("course") or "",
+                q.get("topic") or "",
+                q.get("difficulty") or "",
+                q.get("source_pdf") or "",
+            ))
+        conn.commit()
+    finally:
+        conn.close()
     print(f"✓ {len(questions)} questions inserted into database")
 
 
-# NEW: Complete Pipeline Endpoint
+def course_folder_name(course_name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", course_name).strip("_") or "course"
+
+
+async def extract_questions_from_pdf(file_info: dict, course_name: str, topics: list, semaphore: asyncio.Semaphore) -> list:
+    pdf_bytes = await asyncio.to_thread(lambda: open(file_info["path"], "rb").read())
+
+    prompt = f"""This document was found online as possible past exam or study material for the
+course "{course_name}", which covers these topics: {', '.join(topics)}.
+
+Extract the practice questions from it that would help a student prepare for this course.
+Write each question so it stands on its own, including any values or context it needs.
+Tag each question with the most relevant topic from the list and a difficulty.
+If the document contains no usable questions for this course, return an empty list."""
+
+    async with semaphore:
+        result = await generate_json([pdf_part(pdf_bytes), prompt], QUESTIONS_SCHEMA)
+
+    questions = result["questions"]
+    # Store every question under the exact course name from the syllabus analysis
+    for q in questions:
+        q["course"] = course_name
+        q["source_pdf"] = file_info["source_url"]
+
+    print(f"✓ Extracted {len(questions)} questions from {file_info['filename']}")
+    return questions
+
+
+# Complete Pipeline Endpoint
 @app.post("/api/process-syllabus-pipeline/")
 async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
     results = {
         "course_info": {},
         "search_results": {},
         "downloaded_pdfs": [],
-        "practice_exam": {}
+        "stored_questions": {}
     }
 
     try:
         # STEP 1: Process the uploaded syllabus
         print("Step 1: Processing syllabus...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            content = await syllabus.read()
-            temp_file.write(content)
-            temp_path = temp_file.name
-
-        syllabus_text = extract_text_from_pdf(temp_path)
-        analysis = await analyze_syllabus_with_gemini(syllabus_text)
-
+        try:
+            analysis = await analyze_syllabus(await syllabus.read())
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         results["course_info"] = analysis
-        
+
         # IMPORTANT: Use the course_name from Gemini's analysis
         # This is what will be stored in the database
         course_name = analysis.get("course_name", "Unknown Course")
@@ -127,107 +144,66 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
         print(f"✓ Course identified: {course_name}")
         print(f"✓ Topics found: {len(topics)}")
 
-        os.unlink(temp_path)
-
         # STEP 2: Search for past exam PDFs
         print("\nStep 2: Searching for past exam PDFs...")
-        from .api.web_search import web_search as perform_web_search
         search_results = await perform_web_search(course_name)
         results["search_results"] = search_results
         print(f"✓ Search completed: {sum(len(v) for v in search_results.values())} PDFs found")
 
-        # STEP 3: Download the PDFs
+        # STEP 3: Download the PDFs (the same PDF often shows up for several queries)
         print("\nStep 3: Downloading PDFs...")
-        os.makedirs("downloaded_exams", exist_ok=True)
-        downloaded_files = []
-        download_count = 0
-        max_downloads = 10
-
-        for query, links in search_results.items():
-            for item in links[:max_downloads]:
-                if download_count >= max_downloads:
-                    break
+        candidates = []
+        seen_urls = set()
+        for links in search_results.values():
+            for item in links:
                 pdf_url = item.get("link")
-                if pdf_url:
-                    try:
-                        safe_name = f"exam_{download_count + 1}.pdf"
-                        file_path = os.path.join("downloaded_exams", safe_name)
-                        download_result = download_pdf_file(pdf_url, file_path)
-                        downloaded_files.append({
-                            "filename": safe_name,
-                            "path": file_path,
-                            "source_url": pdf_url,
-                            "title": item.get("title"),
-                            "size_bytes": download_result.get("size_bytes", 0)
-                        })
-                        download_count += 1
-                        print(f"✓ Downloaded: {safe_name}")
-                    except Exception as e:
-                        print(f"✗ Failed to download {pdf_url}: {str(e)}")
-                        continue
-            if download_count >= max_downloads:
-                break
+                if pdf_url and pdf_url not in seen_urls:
+                    seen_urls.add(pdf_url)
+                    candidates.append(item)
+        candidates = candidates[:MAX_DOWNLOADS]
+
+        course_dir = DOWNLOAD_DIR / course_folder_name(course_name)
+
+        async def download(index: int, item: dict):
+            safe_name = f"exam_{index + 1}.pdf"
+            file_path = course_dir / safe_name
+            try:
+                download_result = await download_pdf_file(client, item["link"], file_path)
+            except Exception as e:
+                print(f"✗ Failed to download {item['link']}: {e}")
+                return None
+            print(f"✓ Downloaded: {safe_name}")
+            return {
+                "filename": safe_name,
+                "path": str(file_path),
+                "source_url": item["link"],
+                "title": item.get("title"),
+                "size_bytes": download_result.get("size_bytes", 0)
+            }
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            downloads = await asyncio.gather(*(download(i, item) for i, item in enumerate(candidates)))
+        downloaded_files = [d for d in downloads if d]
 
         results["downloaded_pdfs"] = downloaded_files
         print(f"\n✓ Total PDFs downloaded: {len(downloaded_files)}")
 
-        # STEP 4: Create practice exam from downloaded PDFs
+        # STEP 4: Extract questions from downloaded PDFs and store them
         print("\nStep 4: Storing Questions from PDFs into Database...")
 
         all_questions = []
 
         if downloaded_files:
-            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-            for file_info in downloaded_files:
-                try:
-                    pdf_text = extract_text_from_pdf(file_info["path"])
-                    
-                    # IMPORTANT: Make sure Gemini uses the exact course_name from analysis
-                    prompt = f"""
-Analyze this past exam content for the course "{course_name}" covering topics: {', '.join(topics)}.
-
-Extract practice questions that would help students prepare for this course.
-
-IMPORTANT: You must use EXACTLY this course name in your response: "{course_name}"
-
-Format your response as JSON with this structure:
-{{
-    "questions": [
-        {{
-          "question": "The question text",
-          "course": "{course_name}",
-          "difficulty": "easy" or "medium" or "hard",
-          "topic": "relevant topic from the list"
-        }}
-    ]
-}}
-
-Exam content (first 3000 characters):
-{pdf_text[:3000]}
-"""
-                    response = await client.aio.models.generate_content(
-                        model="gemini-2.0-flash",
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json"
-                        )
-                    )
-
-                    result = json.loads(response.text)
-                    questions = result.get("questions", [])
-
-                    # DOUBLE CHECK: Ensure every question has the correct course name
-                    for q in questions:
-                        q["course"] = course_name  # Force the correct course name
-                        q["source_pdf"] = file_info["source_url"]
-
-                    all_questions.extend(questions)
-                    print(f"✓ Extracted {len(questions)} questions from {file_info['filename']}")
-                    
-                except Exception as e:
-                    print(f"✗ Error processing {file_info['filename']}: {str(e)}")
-                    continue
+            semaphore = asyncio.Semaphore(GEMINI_CONCURRENCY)
+            extracted = await asyncio.gather(
+                *(extract_questions_from_pdf(f, course_name, topics, semaphore) for f in downloaded_files),
+                return_exceptions=True
+            )
+            for file_info, outcome in zip(downloaded_files, extracted):
+                if isinstance(outcome, Exception):
+                    print(f"✗ Error processing {file_info['filename']}: {outcome}")
+                else:
+                    all_questions.extend(outcome)
 
             random.shuffle(all_questions)
 
@@ -245,9 +221,10 @@ Exam content (first 3000 characters):
                 print(f"✓ {len(all_questions)} questions stored to database under course: '{course_name}'")
             else:
                 print("⚠ No questions extracted from PDFs")
-                
+
         else:
             results["stored_questions"] = {
+                "total_questions": 0,
                 "message": "No PDFs downloaded, cannot find questions"
             }
 
@@ -258,6 +235,8 @@ Exam content (first 3000 characters):
             "results": results
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -266,4 +245,5 @@ Exam content (first 3000 characters):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Localhost only: the API has no authentication
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -3,26 +3,22 @@
   "version": "1.0.0",
   "description": "A study toolkit integrating FastAPI backend with an Electron frontend.",
   "main": "dist/main.js",
+  "type": "module",
   "scripts": {
-    "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && copy src\\renderer.html dist\\renderer.html && copy src\\preload.cjs dist\\preload.cjs",
+    "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && node -e \"for (const f of ['renderer.html', 'preload.cjs']) require('fs').copyFileSync('src/' + f, 'dist/' + f)\"",
     "start": "npm run build && electron .",
-    "dev": "electron . --dev"
+    "dev": "npm run build && electron . --dev"
   },
   "dependencies": {
-    "axios": "^1.13.2",
-    "better-sqlite3": "^12.4.1",
     "electron": "^39.2.0",
-    "package.json": "^2.0.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@types/sqlite3": "^3.1.11",
     "autoprefixer": "^10.4.16",
-    "playwright": "^1.24.0",
     "postcss": "^8.4.31",
     "postcss-cli": "^10.1.0",
     "tailwindcss": "^3.3.6",
-    "ts-loader": "^9.4.2",
     "typescript": "^4.9.5"
   },
   "keywords": [
