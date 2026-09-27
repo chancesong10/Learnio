@@ -16,7 +16,7 @@ The backend reads `study-toolkit/.env.local` (see `study-toolkit/.env.example`):
 
 - `GEMINI_API_KEY` (required; free key from https://aistudio.google.com/apikey)
 - `SERPAPI_API_KEY` (required for search and the pipeline)
-- `GEMINI_MODEL` (optional, defaults to `gemini-2.5-flash`)
+- `GEMINI_MODEL` (optional, defaults to `gemini-3.8-flash`)
 
 ## Installation
 

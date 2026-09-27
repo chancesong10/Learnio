@@ -6,6 +6,7 @@ import httpx
 
 from .config import DOWNLOAD_DIR, get_db_connection
 from .llm import generate_json, pdf_part
+from .question_bank import ANSWER_STYLE, QUESTIONS_SCHEMA, insert_questions
 
 # Import your existing routers
 from .api import (
@@ -32,27 +33,6 @@ MAX_DOWNLOADS = 10
 # Limit parallel Gemini requests to stay under the free tier's per-minute limits
 GEMINI_CONCURRENCY = 2
 
-QUESTIONS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "questions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string"},
-                    "difficulty": {"type": "string", "enum": ["easy", "medium", "hard"]},
-                    "topic": {"type": "string"},
-                },
-                "required": ["question", "difficulty", "topic"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    "required": ["questions"],
-    "additionalProperties": False,
-}
-
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Study Toolkit API"}
@@ -63,28 +43,6 @@ app.include_router(keyword_extraction.router)
 app.include_router(web_search.router)
 app.include_router(flashcard_generator.router)
 app.include_router(practice_exam_creator.router)
-
-
-# --- HELPER: Insert questions into SQLite database ---
-def insert_questions_into_db(questions: list):
-    conn = get_db_connection()
-    try:
-        for q in questions:
-            conn.execute("""
-                INSERT OR IGNORE INTO questions
-                (question_text, course, topics, difficulty, source_pdf)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                q.get("question") or "",
-                q.get("course") or "",
-                q.get("topic") or "",
-                q.get("difficulty") or "",
-                q.get("source_pdf") or "",
-            ))
-        conn.commit()
-    finally:
-        conn.close()
-    print(f"✓ {len(questions)} questions inserted into database")
 
 
 def course_folder_name(course_name: str) -> str:
@@ -100,6 +58,10 @@ course "{course_name}", which covers these topics: {', '.join(topics)}.
 Extract the practice questions from it that would help a student prepare for this course.
 Write each question so it stands on its own, including any values or context it needs.
 Tag each question with the most relevant topic from the list and a difficulty.
+If the document includes answers, use them; otherwise work the answer out yourself.
+
+{ANSWER_STYLE}
+
 If the document contains no usable questions for this course, return an empty list."""
 
     async with semaphore:
@@ -217,7 +179,7 @@ async def process_syllabus_pipeline(syllabus: UploadFile = File(...)):
 
             # --- SAVE QUESTIONS TO DATABASE ---
             if all_questions:
-                insert_questions_into_db(all_questions)
+                insert_questions(all_questions)
                 print(f"✓ {len(all_questions)} questions stored to database under course: '{course_name}'")
             else:
                 print("⚠ No questions extracted from PDFs")

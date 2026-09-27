@@ -19,8 +19,8 @@ load_dotenv(PROJECT_ROOT / ".env.local")
 DB_PATH = PROJECT_ROOT / "data" / "question_bank.sqlite"
 DOWNLOAD_DIR = PROJECT_ROOT / "downloaded_exams"
 
-# Any Gemini model with a free tier works, e.g. gemini-2.5-flash or gemini-2.5-flash-lite
-GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+# Any Gemini model with a free tier works, e.g. gemini-3.8-flash or gemini-3.5-flash-lite
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
 
 
 def require_env(name: str) -> str:
@@ -52,4 +52,9 @@ def get_db_connection() -> sqlite3.Connection:
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    # Older databases predate answers; add the columns in place
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(questions)")}
+    for column in ("answer", "explanation"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE questions ADD COLUMN {column} TEXT")
     return conn

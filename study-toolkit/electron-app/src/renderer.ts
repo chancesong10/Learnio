@@ -1,4 +1,4 @@
-// This file handles the user interface logic for the Electron app. 
+// This file handles the user interface logic for the Electron app.
 
 declare global {
     interface Window {
@@ -8,6 +8,7 @@ declare global {
             searchWeb: (courseName: string) => Promise<any>;
             generateFlashcards: (notes: string[]) => Promise<any>;
             createPracticeExam: (materials: any) => Promise<any>;
+            backendStatus: () => Promise<{ status: 'ready' | 'error'; message?: string }>;
             getCourses: () => Promise<any>;
             getTopics: (course: string) => Promise<any>;
         };
@@ -16,63 +17,41 @@ declare global {
 
 export {};
 
-const syllabusUpload = document.getElementById('syllabus-upload') as HTMLInputElement;
-const summarizeBtn = document.getElementById('summarize-syllabus');
-const summaryOutput = document.getElementById('syllabus-summary');
-const practiceExamSection = document.getElementById('practice-exam-section');
-const courseSelect = document.getElementById('course-select') as HTMLSelectElement;
-const topicsChecklist = document.getElementById('topics-checklist');
-const createPracticeExamBtn = document.getElementById('create-practice-exam');
-const outputDiv = document.getElementById('output');
+import { renderRichText } from './rich-text.js';
 
-console.log('Renderer script loaded');
-
-// ==================== FORMATTING HELPERS ====================
-
-function formatSuccessMessage(title: string, message: string): string {
-    return `
-<div class="bg-green-900/30 border-l-4 border-green-500 p-4 rounded-lg">
-    <div class="flex items-start">
-        <svg class="w-6 h-6 text-green-400 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <div>
-            <h3 class="text-green-300 font-semibold text-lg">${escapeHtml(title)}</h3>
-            <p class="text-green-400 mt-1">${escapeHtml(message)}</p>
-        </div>
-    </div>
-</div>`;
+interface ExamQuestion {
+    id: number;
+    question: string;
+    topic: string;
+    difficulty: string;
+    answer: string;
+    explanation: string;
+    source: string;
 }
 
-function formatErrorMessage(title: string, message: string): string {
-    return `
-<div class="bg-red-900/30 border-l-4 border-red-500 p-4 rounded-lg">
-    <div class="flex items-start">
-        <svg class="w-6 h-6 text-red-400 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <div>
-            <h3 class="text-red-300 font-semibold text-lg">${escapeHtml(title)}</h3>
-            <p class="text-red-400 mt-1 whitespace-pre-line">${escapeHtml(message)}</p>
-        </div>
-    </div>
-</div>`;
-}
+const MAX_QUESTIONS = 50;
 
-function formatLoadingMessage(message: string): string {
-    return `
-<div class="bg-blue-900/30 border-l-4 border-blue-500 p-4 rounded-lg">
-    <div class="flex items-start">
-        <svg class="animate-spin w-6 h-6 text-blue-400 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <div>
-            <p class="text-blue-300 font-medium">${escapeHtml(message)}</p>
-        </div>
-    </div>
-</div>`;
-}
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const statusPill = $('backend-status');
+const syllabusInput = $<HTMLInputElement>('syllabus-upload');
+const dropzone = $<HTMLButtonElement>('dropzone');
+const analyzeBtn = $<HTMLButtonElement>('summarize-syllabus');
+const summary = $('syllabus-summary');
+const courseSelect = $<HTMLSelectElement>('course-select');
+const topicsBox = $('topics-checklist');
+const numInput = $<HTMLInputElement>('num-questions');
+const generateBtn = $<HTMLButtonElement>('create-practice-exam');
+const output = $('output');
+const resultsEyebrow = $('results-eyebrow');
+const resultsTitle = $('results-title');
+const resultsMeta = $('results-meta');
+const revealAllBtn = $<HTMLButtonElement>('reveal-all');
+
+let selectedFile: File | null = null;
+const selectedTopics = new Set<string>();
+
+// ==================== HELPERS ====================
 
 function escapeHtml(text: string): string {
     const div = document.createElement('div');
@@ -80,334 +59,321 @@ function escapeHtml(text: string): string {
     return div.innerHTML;
 }
 
-function formatPipelineSummary(result: any): string {
-    if (result.status !== 'success') {
-        return result.message || '❌ Failed to process syllabus';
-    }
+// Main-process messages start with an emoji status marker; the UI has its own styling
+function cleanMessage(message: string | undefined, fallback: string): string {
+    return (message || fallback).replace(/^[❌✅⚠️\s]+/u, '');
+}
 
-    const results = result.data?.results ?? {};
+function notice(kind: 'progress' | 'error' | 'warn', text: string): string {
+    const lead = kind === 'progress' ? '<span class="spinner"></span>' : '';
+    return `<div class="notice ${kind}">${lead}<span>${escapeHtml(text)}</span></div>`;
+}
+
+function setBusy(button: HTMLButtonElement, busy: boolean, busyLabel: string) {
+    if (busy) {
+        button.dataset.label = button.textContent?.trim() || '';
+        button.innerHTML = `<span class="spinner"></span>${escapeHtml(busyLabel)}`;
+        button.disabled = true;
+    } else {
+        button.textContent = button.dataset.label || '';
+        button.disabled = false;
+    }
+}
+
+function clampCount(value: number): number {
+    if (!Number.isFinite(value)) return 10;
+    return Math.min(MAX_QUESTIONS, Math.max(1, Math.round(value)));
+}
+
+function sourceLabel(source: string): string {
+    if (!source) return '';
+    if (source === 'generated') return '<span class="q-source">New question</span>';
+    try {
+        const url = new URL(source);
+        return `<a class="q-source" href="${escapeHtml(url.href)}" target="_blank" title="${escapeHtml(url.href)}">${escapeHtml(url.hostname.replace(/^www\./, ''))}</a>`;
+    } catch {
+        return '';
+    }
+}
+
+function plural(n: number, word: string): string {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+// ==================== BACKEND STATUS ====================
+
+async function watchBackend() {
+    const label = statusPill.querySelector('.status-label')!;
+    const result = await window.api.backendStatus();
+    statusPill.dataset.state = result.status;
+    label.textContent = result.status === 'ready' ? 'Ready' : 'Offline';
+    if (result.message) statusPill.title = result.message;
+}
+
+// ==================== STEP 1: SYLLABUS ====================
+
+function chooseFile(file: File | undefined) {
+    if (!file) return;
+    selectedFile = file;
+    dropzone.classList.add('has-file');
+    dropzone.querySelector('.dropzone-title')!.textContent = file.name;
+    dropzone.querySelector('.dropzone-sub')!.textContent = `${(file.size / 1024).toFixed(0)} KB · click to change`;
+    analyzeBtn.disabled = false;
+}
+
+dropzone.addEventListener('click', () => syllabusInput.click());
+syllabusInput.addEventListener('change', () => chooseFile(syllabusInput.files?.[0]));
+
+dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragging');
+});
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragging'));
+dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragging');
+    chooseFile(e.dataTransfer?.files?.[0]);
+});
+
+function renderSyllabusSummary(data: any): string {
+    const results = data?.results ?? {};
     const topics: string[] = results.course_info?.topics ?? [];
     const pdfCount = results.downloaded_pdfs?.length ?? 0;
     const questionCount = results.stored_questions?.total_questions ?? 0;
 
-    const lines = [
-        result.message,
-        '',
-        `Course: ${result.data?.course_name ?? 'Unknown'}`,
-        `Topics (${topics.length}): ${topics.join(', ') || 'none found'}`,
-        `Past exam PDFs downloaded: ${pdfCount}`,
-        `Questions added to question bank: ${questionCount}`,
-    ];
+    let html = `
+        <dl>
+            <div class="summary-row"><dt>Course</dt><dd>${escapeHtml(data?.course_name ?? 'Unknown')}</dd></div>
+            <div class="summary-row"><dt>Past exams found</dt><dd>${pdfCount}</dd></div>
+            <div class="summary-row"><dt>Questions added</dt><dd>${questionCount}</dd></div>
+        </dl>`;
+    if (topics.length) {
+        html += `<div class="chips">${topics.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join('')}</div>`;
+    }
     if (questionCount === 0) {
-        lines.push('', '⚠️  No questions were found online for this course, so practice exams will be empty.');
+        html += notice('warn', 'No past exams were found online. Learnio will write fresh questions when you generate an exam.');
     }
-    return lines.join('\n');
-}
-
-function formatPracticeExam(exam: any[]): string {
-    if (!exam || exam.length === 0) {
-        return '<p class="text-gray-500 text-center py-8">No questions found.</p>';
-    }
-
-    let html = '<div class="space-y-4">';
-    
-    exam.forEach((question, index) => {
-        const questionText = question.question_text || question.question || 'No question text';
-        const topics = question.topics || '';
-        const difficulty = question.difficulty || '';
-        
-        html += `
-        <div class="bg-gray-900/60 border border-gray-700 rounded-lg p-5 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <div class="flex items-start gap-4">
-                <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-md">
-                    ${index + 1}
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-gray-100 font-medium leading-relaxed mb-3">${escapeHtml(questionText)}</p>
-                    <div class="flex flex-wrap gap-2">
-                        ${topics ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-900/40 text-purple-300 border border-purple-700">
-                            📚 ${escapeHtml(topics)}
-                        </span>` : ''}
-                        ${difficulty ? `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                            difficulty.toLowerCase() === 'easy' ? 'bg-green-900/40 text-green-300 border border-green-700' :
-                            difficulty.toLowerCase() === 'medium' ? 'bg-yellow-900/40 text-yellow-300 border border-yellow-700' :
-                            'bg-red-900/40 text-red-300 border border-red-700'
-                        }">
-                            ${difficulty.toLowerCase() === 'easy' ? '⭐' : difficulty.toLowerCase() === 'medium' ? '⭐⭐' : '⭐⭐⭐'} ${escapeHtml(difficulty.charAt(0).toUpperCase() + difficulty.slice(1))}
-                        </span>` : ''}
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    });
-    
-    html += '</div>';
     return html;
 }
 
-// ==================== EVENT HANDLERS ====================
+analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
 
-// Load courses on page load
-window.addEventListener('DOMContentLoaded', async () => {
-    await updateCourseDropdown();
+    setBusy(analyzeBtn, true, 'Analyzing…');
+    summary.hidden = false;
+    summary.innerHTML = notice('progress', 'Reading your syllabus and searching for past exams. This can take a couple of minutes.');
+
+    try {
+        const result = await window.api.processSyllabus(await selectedFile.arrayBuffer(), selectedFile.name);
+        if (result.status !== 'success') {
+            summary.innerHTML = notice('error', cleanMessage(result.message, 'Failed to process the syllabus'));
+            return;
+        }
+
+        summary.innerHTML = renderSyllabusSummary(result.data);
+        await loadCourses();
+
+        const courseName = result.data?.course_name;
+        if (courseName) {
+            courseSelect.value = courseName;
+            await loadTopics(courseName);
+        }
+    } catch (err) {
+        summary.innerHTML = notice('error', err instanceof Error ? err.message : String(err));
+    } finally {
+        setBusy(analyzeBtn, false, '');
+    }
 });
 
-// File upload listener
-if (syllabusUpload) {
-    syllabusUpload.addEventListener('change', (event) => {
-        const target = event.target as HTMLInputElement;
-        if (target && target.files) {
-            const file = target.files[0];
-            if (file) {
-                console.log('File uploaded:', file.name);
-            }
-        }
-    });
-}
+// ==================== STEP 2: EXAM SETTINGS ====================
 
-// Summarize syllabus
-if (summarizeBtn) {
-    console.log('Attaching click listener to summarize button');
-    summarizeBtn.addEventListener('click', async () => {
-        console.log('Summarize button clicked!');
-        
-        if (!syllabusUpload || !syllabusUpload.files?.length) {
-            console.log('No file uploaded');
-            if (summaryOutput) summaryOutput.innerText = '⚠️  Please upload a syllabus first.';
-            return;
-        }
+async function loadCourses() {
+    const previous = courseSelect.value;
+    while (courseSelect.options.length > 1) courseSelect.remove(1);
 
-        const file = syllabusUpload.files[0];
-        console.log('File selected:', file.name, 'Size:', file.size);
+    const result = await window.api.getCourses();
+    if (result.status !== 'success') return;
 
-        if (summaryOutput) {
-            summaryOutput.innerText = '⏳ Processing syllabus and generating questions... This may take a few minutes.';
-        }
-
-        try {
-            const fileBuffer = await file.arrayBuffer();
-            console.log('File read, size:', fileBuffer.byteLength);
-            
-            console.log('Calling window.api.processSyllabus');
-            const result = await window.api.processSyllabus(fileBuffer, file.name);
-            console.log('Got result:', result);
-            
-            if (summaryOutput) summaryOutput.innerText = formatPipelineSummary(result);
-            
-            // Refresh the courses dropdown to include the new course
-            if (result.status === 'success') {
-                await updateCourseDropdown();
-                
-                // Show the practice exam section
-                if (practiceExamSection) {
-                    practiceExamSection.style.display = 'block';
-                }
-                
-                // If the pipeline returned a course_name, auto-select it
-                if (result.data?.course_name && courseSelect) {
-                    const courseName = result.data.course_name;
-                    courseSelect.value = courseName;
-                    await updateTopicsChecklist(courseName);
-
-                    if (summaryOutput) {
-                        summaryOutput.innerText += `\n\n✅ Auto-selected course: "${courseName}"`;
-                    }
-                }
-            }
-            
-        } catch (err) {
-            console.error('Error caught:', err);
-            const errorText = '❌ Error:\n' + (err instanceof Error ? err.message : String(err));
-            if (summaryOutput) summaryOutput.innerText = errorText;
-        }
-    });
-}
-
-// Update course dropdown - fetch from database
-async function updateCourseDropdown() {
-    if (!courseSelect) return;
-    
-    try {
-        // Clear existing options except the first one
-        while (courseSelect.options.length > 1) {
-            courseSelect.remove(1);
-        }
-        
-        // Fetch courses from database
-        const result = await window.api.getCourses();
-        
-        if (result.status === 'success' && result.courses) {
-            result.courses.forEach((course: string) => {
-                const option = document.createElement('option');
-                option.value = course;
-                option.textContent = course;
-                courseSelect.appendChild(option);
-            });
-            
-            // Show practice exam section if courses are available
-            if (result.courses.length > 0 && practiceExamSection) {
-                practiceExamSection.style.display = 'block';
-            }
-        }
-    } catch (err) {
-        console.error('Error fetching courses:', err);
+    for (const course of result.courses as string[]) {
+        courseSelect.add(new Option(course, course));
     }
+    if (previous) courseSelect.value = previous;
 }
 
-// Course selection change handler - fetch topics from database
-if (courseSelect) {
-    courseSelect.addEventListener('change', async () => {
-        const selectedCourse = courseSelect.value;
-        await updateTopicsChecklist(selectedCourse);
-    });
-}
-
-// Update topics checklist - fetch from database
-async function updateTopicsChecklist(course: string) {
-    if (!topicsChecklist) return;
-    
-    topicsChecklist.innerHTML = '';
-    
-    if (!course) {
-        topicsChecklist.innerHTML = '<p class="text-gray-500 text-sm">Select a course to see available topics</p>';
+function renderTopicChips(topics: string[]) {
+    topicsBox.innerHTML = '';
+    if (!topics.length) {
+        topicsBox.innerHTML = '<span class="muted small">No topics saved for this course. The exam will cover everything.</span>';
         return;
     }
-    
-    try {
-        topicsChecklist.innerHTML = '<p class="text-gray-500 text-sm">Loading topics...</p>';
-        
-        const result = await window.api.getTopics(course);
-        
-        topicsChecklist.innerHTML = '';
-        
-        if (!result.status || result.status === 'error' || !result.topics || result.topics.length === 0) {
-            topicsChecklist.innerHTML = '<p class="text-gray-500 text-sm">No topics found for this course</p>';
-            return;
-        }
-        
-        // Create checkboxes for each topic
-        result.topics.forEach((topic: string, index: number) => {
-            const div = document.createElement('div');
-            div.className = 'flex items-center mb-2';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.id = `topic-${index}`;
-            checkbox.value = topic;
-            checkbox.className = 'mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500';
-            
-            const label = document.createElement('label');
-            label.htmlFor = `topic-${index}`;
-            label.textContent = topic;
-            label.className = 'text-sm text-white cursor-pointer';
-            
-            div.appendChild(checkbox);
-            div.appendChild(label);
-            topicsChecklist.appendChild(div);
-        });
-    } catch (err) {
-        console.error('Error fetching topics:', err);
-        topicsChecklist.innerHTML = '<p class="text-red-500 text-sm">Error loading topics</p>';
-    }
-}
 
-// Create practice exam - WITH BEAUTIFUL FORMATTING
-if (createPracticeExamBtn) {
-    createPracticeExamBtn.addEventListener('click', async () => {
-        if (!courseSelect || !courseSelect.value) {
-            if (outputDiv) outputDiv.innerHTML = formatErrorMessage('No Course Selected', 'Please select a course first.');
-            return;
-        }
-        
-        const selectedCourse = courseSelect.value;
-        const numQuestionsInput = document.getElementById('num-questions') as HTMLInputElement;
-        const numQuestions = numQuestionsInput ? parseInt(numQuestionsInput.value) : 20;
-        
-        // Get selected topics
-        const selectedTopics: string[] = [];
-        if (topicsChecklist) {
-            const checkboxes = topicsChecklist.querySelectorAll('input[type="checkbox"]:checked');
-            checkboxes.forEach(checkbox => {
-                selectedTopics.push((checkbox as HTMLInputElement).value);
-            });
-        }
-        
-        if (outputDiv) {
-            outputDiv.innerHTML = formatLoadingMessage('Creating your practice exam... This may take a moment.');
-        }
-        
-        try {
-            const exam = await window.api.createPracticeExam({
-                course: selectedCourse,
-                topics: selectedTopics.length > 0 ? selectedTopics : undefined,
-                num_questions: numQuestions
-            });
-            
-            console.log('Practice exam created:', exam);
-            
-            if (outputDiv) {
-                if (exam.status === 'success' && exam.exam && exam.exam.length > 0) {
-                    // Create beautiful header
-                    let headerHtml = `
-                    <div class="mb-6">
-                        ${formatSuccessMessage('Practice Exam Created! 🎉', `Successfully generated ${exam.exam.length} practice questions`)}
-                        <div class="mt-4 bg-gray-900/60 rounded-lg p-5 border border-gray-700 shadow-sm">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                <div class="flex items-center">
-                                    <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                                    </svg>
-                                    <div>
-                                        <span class="text-gray-400 font-medium">Course:</span>
-                                        <span class="text-gray-100 ml-2 font-semibold">${escapeHtml(selectedCourse)}</span>
-                                    </div>
-                                </div>
-                                <div class="flex items-center">
-                                    <svg class="w-5 h-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                    <div>
-                                        <span class="text-gray-400 font-medium">Questions:</span>
-                                        <span class="text-gray-100 ml-2 font-semibold">${exam.exam.length}</span>
-                                    </div>
-                                </div>
-                                ${selectedTopics.length > 0 ? `
-                                <div class="col-span-full flex items-start">
-                                    <svg class="w-5 h-5 text-purple-400 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
-                                    </svg>
-                                    <div>
-                                        <span class="text-gray-400 font-medium">Selected Topics:</span>
-                                        <div class="mt-1 flex flex-wrap gap-1">
-                                            ${selectedTopics.map(t => `<span class="inline-block px-2 py-0.5 bg-purple-900/40 text-purple-300 rounded-full text-xs font-medium">${escapeHtml(t)}</span>`).join('')}
-                                        </div>
-                                    </div>
-                                </div>
-                                ` : `
-                                <div class="col-span-full flex items-center">
-                                    <svg class="w-5 h-5 text-indigo-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
-                                    </svg>
-                                    <span class="text-gray-400 font-medium">Topics: <span class="text-gray-100 ml-1">All topics included</span></span>
-                                </div>
-                                `}
-                            </div>
-                        </div>
-                    </div>`;
-                    
-                    outputDiv.innerHTML = headerHtml + formatPracticeExam(exam.exam);
-                } else if (exam.status === 'error') {
-                    outputDiv.innerHTML = formatErrorMessage('Error Creating Exam', exam.message || 'Failed to create practice exam. Please try again.');
-                } else {
-                    outputDiv.innerHTML = formatErrorMessage('No Questions Found', 'No questions available for this course and topic selection. Try selecting different topics or processing more study materials.');
-                }
-            }
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            if (outputDiv) {
-                outputDiv.innerHTML = formatErrorMessage('Error Creating Practice Exam', errorMessage);
-            }
-            console.error('Error:', err);
-        }
+    const allChip = document.createElement('button');
+    allChip.type = 'button';
+    allChip.className = 'chip active';
+    allChip.textContent = 'All topics';
+    topicsBox.appendChild(allChip);
+
+    const topicChips = topics.map((topic) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = topic;
+        chip.addEventListener('click', () => {
+            selectedTopics.has(topic) ? selectedTopics.delete(topic) : selectedTopics.add(topic);
+            chip.classList.toggle('active', selectedTopics.has(topic));
+            allChip.classList.toggle('active', selectedTopics.size === 0);
+        });
+        topicsBox.appendChild(chip);
+        return chip;
+    });
+
+    allChip.addEventListener('click', () => {
+        selectedTopics.clear();
+        topicChips.forEach(c => c.classList.remove('active'));
+        allChip.classList.add('active');
     });
 }
+
+async function loadTopics(course: string) {
+    selectedTopics.clear();
+    if (!course) {
+        topicsBox.innerHTML = '<span class="muted small">Select a course to see its topics</span>';
+        return;
+    }
+    topicsBox.innerHTML = '<span class="muted small">Loading topics…</span>';
+    const result = await window.api.getTopics(course);
+    renderTopicChips(result.status === 'success' ? result.topics : []);
+}
+
+courseSelect.addEventListener('change', () => loadTopics(courseSelect.value));
+
+$('num-minus').addEventListener('click', () => { numInput.value = String(clampCount(Number(numInput.value) - 1)); });
+$('num-plus').addEventListener('click', () => { numInput.value = String(clampCount(Number(numInput.value) + 1)); });
+numInput.addEventListener('change', () => { numInput.value = String(clampCount(Number(numInput.value))); });
+
+// ==================== RESULTS ====================
+
+function renderSkeletons(count: number) {
+    const card = `
+        <div class="skeleton">
+            <div class="skeleton-line w-25"></div>
+            <div class="skeleton-line w-90"></div>
+            <div class="skeleton-line w-60"></div>
+        </div>`;
+    output.innerHTML = card.repeat(Math.min(count, 5));
+}
+
+function renderQuestion(q: ExamQuestion, index: number): string {
+    const difficulty = (q.difficulty || '').toLowerCase();
+    const meta = [
+        difficulty ? `<span class="badge ${escapeHtml(difficulty)}"><span class="dot"></span>${escapeHtml(difficulty)}</span>` : '',
+        q.topic ? `<span>${escapeHtml(q.topic)}</span>` : '',
+        sourceLabel(q.source),
+    ].filter(Boolean).join('<span class="sep">·</span>');
+
+    const answer = q.answer
+        ? `<div class="answer-text rich">${renderRichText(q.answer)}</div>${q.explanation ? `<div class="answer-why rich">${renderRichText(q.explanation)}</div>` : ''}`
+        : '<div class="answer-why">No answer is available for this question yet.</div>';
+
+    return `
+        <article class="question">
+            <div class="q-num">${String(index + 1).padStart(2, '0')}</div>
+            <div>
+                <div class="q-meta">${meta}</div>
+                <div class="q-text rich">${renderRichText(q.question)}</div>
+                <button type="button" class="link-btn" data-toggle>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <span>Show answer</span>
+                </button>
+                <div class="answer">
+                    <div class="answer-label">Answer</div>
+                    ${answer}
+                </div>
+            </div>
+        </article>`;
+}
+
+function setQuestionOpen(card: Element, open: boolean) {
+    card.classList.toggle('open', open);
+    card.querySelector('[data-toggle] span')!.textContent = open ? 'Hide answer' : 'Show answer';
+}
+
+function syncRevealAll() {
+    const cards = output.querySelectorAll('.question');
+    const allOpen = cards.length > 0 && Array.from(cards).every(c => c.classList.contains('open'));
+    revealAllBtn.textContent = allOpen ? 'Hide all answers' : 'Show all answers';
+}
+
+output.addEventListener('click', (e) => {
+    const toggle = (e.target as HTMLElement).closest('[data-toggle]');
+    if (!toggle) return;
+    const card = toggle.closest('.question')!;
+    setQuestionOpen(card, !card.classList.contains('open'));
+    syncRevealAll();
+});
+
+revealAllBtn.addEventListener('click', () => {
+    const cards = Array.from(output.querySelectorAll('.question'));
+    const open = !cards.every(c => c.classList.contains('open'));
+    cards.forEach(c => setQuestionOpen(c, open));
+    syncRevealAll();
+});
+
+function renderExam(exam: any, course: string, topics: string[]) {
+    const questions: ExamQuestion[] = exam.questions ?? [];
+
+    resultsEyebrow.textContent = topics.length ? topics.join(' · ') : 'All topics';
+    resultsTitle.textContent = course;
+    const parts = [plural(questions.length, 'question')];
+    if (exam.from_bank) parts.push(`${exam.from_bank} from your question bank`);
+    if (exam.generated) parts.push(`${exam.generated} newly written`);
+    resultsMeta.textContent = parts.join(' · ');
+
+    const warnings = (exam.warnings ?? []).map((w: string) => notice('warn', w)).join('');
+    output.innerHTML = warnings + questions.map(renderQuestion).join('');
+    output.querySelectorAll<HTMLElement>('.question').forEach((card, i) => {
+        card.style.animationDelay = `${Math.min(i, 12) * 35}ms`;
+    });
+
+    revealAllBtn.hidden = questions.length === 0;
+    syncRevealAll();
+    output.parentElement?.scrollTo({ top: 0 });
+}
+
+generateBtn.addEventListener('click', async () => {
+    const course = courseSelect.value;
+    if (!course) {
+        output.innerHTML = notice('warn', 'Select a course first.');
+        return;
+    }
+
+    const count = clampCount(Number(numInput.value));
+    numInput.value = String(count);
+    const topics = Array.from(selectedTopics);
+
+    setBusy(generateBtn, true, 'Generating…');
+    revealAllBtn.hidden = true;
+    resultsEyebrow.textContent = 'Building your exam';
+    resultsTitle.textContent = course;
+    resultsMeta.textContent = `Preparing ${plural(count, 'question')} with answers…`;
+    renderSkeletons(count);
+
+    try {
+        const result = await window.api.createPracticeExam({ course, topics, num_questions: count });
+        if (result.status !== 'success') {
+            resultsMeta.textContent = '';
+            output.innerHTML = notice('error', cleanMessage(result.message, 'Failed to create the practice exam'));
+            return;
+        }
+        renderExam(result.exam, course, topics);
+    } catch (err) {
+        output.innerHTML = notice('error', err instanceof Error ? err.message : String(err));
+    } finally {
+        setBusy(generateBtn, false, '');
+    }
+});
+
+// ==================== STARTUP ====================
+
+watchBackend();
+loadCourses();

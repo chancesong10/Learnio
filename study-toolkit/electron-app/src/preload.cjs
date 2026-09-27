@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
     generateFlashcards: (notes) => ipcRenderer.invoke('generate-flashcards', notes),
     createPracticeExam: (materials) => ipcRenderer.invoke('create-practice-exam', materials),
 
+    backendStatus: () => ipcRenderer.invoke('backend-status'),
+
     // Database query methods
     getCourses: () => ipcRenderer.invoke('get-courses'),
     getTopics: (course) => ipcRenderer.invoke('get-topics', course),

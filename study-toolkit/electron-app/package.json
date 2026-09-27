@@ -5,12 +5,15 @@
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && node -e \"for (const f of ['renderer.html', 'preload.cjs']) require('fs').copyFileSync('src/' + f, 'dist/' + f)\"",
+    "build": "postcss src/assets/styles.css -o dist/styles.css && tsc && node scripts/copy-assets.mjs",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev"
   },
   "dependencies": {
+    "dompurify": "^3.4.16",
     "electron": "^39.2.0",
+    "katex": "^0.18.9",
+    "marked": "^18.0.14",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
